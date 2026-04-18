@@ -1,0 +1,13 @@
+apiVersion: v2
+name: panopticon
+description: Panopticon — AI Agent & MCP Observability Platform
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - observability
+  - ai-agents
+  - mcp
+  - tracing
+maintainers:
+  - name: Panopticon Contributors

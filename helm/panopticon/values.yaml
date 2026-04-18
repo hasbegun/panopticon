@@ -1,0 +1,100 @@
+# Panopticon Helm Chart — default values
+
+# ── API ──────────────────────────────────────────────────────────────────────
+api:
+  replicaCount: 2
+  image:
+    repository: ghcr.io/panopticon-oss/panopticon-api
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  port: 4400
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  env: {}
+
+# ── Dashboard ────────────────────────────────────────────────────────────────
+dashboard:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/panopticon-oss/panopticon-dashboard
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  port: 3000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# ── Worker ───────────────────────────────────────────────────────────────────
+worker:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/panopticon-oss/panopticon-api
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  command: ["bun", "run", "src/workers/index.ts"]
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+# ── Infrastructure (sub-charts or external) ──────────────────────────────────
+
+postgres:
+  enabled: true
+  auth:
+    username: panopticon
+    password: panopticon
+    database: panopticon
+  primary:
+    persistence:
+      size: 10Gi
+
+clickhouse:
+  enabled: true
+  auth:
+    username: default
+    password: ""
+  persistence:
+    size: 50Gi
+
+redis:
+  enabled: true
+  auth:
+    enabled: false
+  master:
+    persistence:
+      size: 2Gi
+
+# ── Ingress ──────────────────────────────────────────────────────────────────
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  hosts:
+    - host: panopticon.local
+      paths:
+        - path: /
+          service: dashboard
+        - path: /v1
+          service: api
+  tls: []
+
+# ── Global ───────────────────────────────────────────────────────────────────
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""

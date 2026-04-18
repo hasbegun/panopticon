@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "panopticon-py"
+version = "0.1.0"
+description = "Python SDK for the Panopticon AI Agent & MCP Observability Platform"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.9"
+authors = [{ name = "Panopticon Contributors" }]
+keywords = ["observability", "ai", "agents", "mcp", "tracing"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: System :: Monitoring",
+]
+dependencies = [
+    "httpx>=0.25.0",
+]
+
+[project.optional-dependencies]
+langchain = ["langchain-core>=0.1.0"]
+crewai = ["crewai>=0.1.0"]
+dev = ["pytest>=7.0", "pytest-asyncio>=0.21", "ruff>=0.1.0"]
+
+[project.urls]
+Homepage = "https://github.com/panopticon-oss/panopticon"
+Documentation = "https://panopticon.dev/docs"
+Repository = "https://github.com/panopticon-oss/panopticon"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/panopticon"]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 120

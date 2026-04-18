@@ -1,0 +1,71 @@
+# =============================================================================
+# Development overlay — volume mounts for hot-reload, no image rebuild needed
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+# =============================================================================
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: deps
+    working_dir: /app/apps/api
+    command: ["bun", "run", "--watch", "src/index.ts"]
+    volumes:
+      - ./apps/api/src:/app/apps/api/src
+      - ./packages/shared/src:/app/packages/shared/src
+    environment:
+      LOG_LEVEL: debug
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: apps/dashboard/Dockerfile
+      target: deps
+    working_dir: /app/apps/dashboard
+    command: ["bun", "run", "next", "dev", "--port", "3000"]
+    volumes:
+      - ./apps/dashboard/src:/app/apps/dashboard/src
+      - ./apps/dashboard/public:/app/apps/dashboard/public
+    environment:
+      NODE_ENV: development
+      INTERNAL_API_URL: "http://api:4400"
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: deps
+    working_dir: /app/apps/api
+    command: ["bun", "run", "--watch", "src/workers/index.ts"]
+    volumes:
+      - ./apps/api/src:/app/apps/api/src
+      - ./packages/shared/src:/app/packages/shared/src
+    environment:
+      LOG_LEVEL: debug
+
+  demo:
+    build:
+      context: .
+      dockerfile: demo/Dockerfile
+    environment:
+      API_URL: "http://api:4400"
+      API_KEY: "pan_seed_key_for_dev"
+    depends_on:
+      - api
+    networks:
+      - panopticon
+    profiles: ["demo"]
+
+  demo-sdk:
+    build:
+      context: .
+      dockerfile: demo/sdk.Dockerfile
+    environment:
+      API_URL: "http://api:4400"
+      API_KEY: "pan_seed_key_for_dev"
+    depends_on:
+      - api
+    networks:
+      - panopticon
+    profiles: ["demo"]
