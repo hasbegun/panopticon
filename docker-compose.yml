@@ -71,12 +71,18 @@ services:
     container_name: panopticon-api
     ports:
       - "${API_PORT:-4400}:4400"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       PORT: "4400"
       DATABASE_URL: "postgresql://${POSTGRES_USER:-panopticon}:${POSTGRES_PASSWORD:-panopticon}@postgres:5432/${POSTGRES_DB:-panopticon}"
       CLICKHOUSE_URL: "http://clickhouse:8123"
       CLICKHOUSE_DB: "${CLICKHOUSE_DB:-panopticon}"
       REDIS_URL: "redis://redis:6379"
+      LLM_PROVIDER: "${LLM_PROVIDER:-openai}"
+      LLM_API_KEY: "${LLM_API_KEY:-}"
+      LLM_MODEL: "${LLM_MODEL:-}"
+      LLM_BASE_URL: "${LLM_BASE_URL:-}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -107,11 +113,17 @@ services:
       dockerfile: apps/api/Dockerfile
     container_name: panopticon-worker
     command: ["bun", "run", "src/workers/index.ts"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       DATABASE_URL: "postgresql://${POSTGRES_USER:-panopticon}:${POSTGRES_PASSWORD:-panopticon}@postgres:5432/${POSTGRES_DB:-panopticon}"
       CLICKHOUSE_URL: "http://clickhouse:8123"
       CLICKHOUSE_DB: "${CLICKHOUSE_DB:-panopticon}"
       REDIS_URL: "redis://redis:6379"
+      LLM_PROVIDER: "${LLM_PROVIDER:-openai}"
+      LLM_API_KEY: "${LLM_API_KEY:-}"
+      LLM_MODEL: "${LLM_MODEL:-}"
+      LLM_BASE_URL: "${LLM_BASE_URL:-}"
     depends_on:
       postgres:
         condition: service_healthy

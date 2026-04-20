@@ -10,6 +10,7 @@ import { liveRoutes } from './routes/live.js';
 import { topologyRoutes } from './routes/topology.js';
 import { securityRoutes } from './routes/security.js';
 import { alertRoutes } from './routes/alerts.js';
+import { queryRoutes } from './routes/query.js';
 import { authMiddleware } from './middleware/auth.js';
 
 const app = new Hono();
@@ -31,6 +32,8 @@ v1.route('/live', liveRoutes);
 v1.route('/topology', topologyRoutes);
 v1.route('/security', securityRoutes);
 v1.route('/alerts', alertRoutes);
+v1.route('/query', queryRoutes);
+v1.route('/ai', queryRoutes);
 
 app.route('/v1', v1);
 

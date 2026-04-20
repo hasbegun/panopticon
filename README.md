@@ -50,6 +50,10 @@ make shell-api      Open shell in API container
 make shell-db       Open psql shell
 make shell-ch       Open clickhouse-client shell
 make shell-redis    Open redis-cli
+make demo           Seed demo data (20 traces, alerts, audit log)
+make demo-live      Run live agent simulator (~2 min real-time)
+make demo-sdk       Run SDK usage example
+make demo-reset     Clear all data and re-seed
 make clean          Stop and remove volumes
 make nuke           Remove everything (volumes, images)
 ```

@@ -5,7 +5,9 @@ let redis: Redis | null = null;
 /** Get or create the Redis client singleton */
 export function getRedis(): Redis {
   if (!redis) {
-    redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379');
+    redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+      maxRetriesPerRequest: null,
+    });
   }
   return redis;
 }

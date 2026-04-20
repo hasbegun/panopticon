@@ -2,6 +2,7 @@ import { Worker, type Job } from 'bullmq';
 import { getRedis } from '../db/redis.js';
 import { getClickHouse } from '../db/clickhouse.js';
 import { getPostgres } from '../db/postgres.js';
+import { classify, isLLMConfigured, resolveConfig } from '../llm/index.js';
 
 console.log('🔧 Panopticon Worker starting...');
 
@@ -11,6 +12,7 @@ const connection = getRedis();
 
 interface SpanData {
   span_id: string;
+  project_id: string;
   span_type: string;
   name: string;
   metadata: string;
@@ -60,32 +62,10 @@ function safeJsonParse(s: string): unknown {
   }
 }
 
-// ── Security patterns ──────────────────────────────────────────────────────────
-
-const INJECTION_PATTERNS = [
-  /ignore (all |previous |your )?instructions/i,
-  /you are now/i,
-  /disregard (the |your )?(system )?prompt/i,
-  /jailbreak/i,
-  /do not follow/i,
-  /override (all |any )?restrictions/i,
-  /pretend (you are|to be)/i,
-  /new instructions:/i,
-];
-
-const PII_PATTERNS = [
-  /\b\d{3}-\d{2}-\d{4}\b/,                                       // SSN
-  /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i,                  // Email
-  /\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b/,                     // Credit card
-  /\b(\+\d{1,3}[- ]?)?\(?\d{3}\)?[- ]?\d{3}[- ]?\d{4}\b/,        // Phone
-];
-
-function detectSecurityFlags(text: string): string[] {
-  const flags: string[] = [];
-  if (INJECTION_PATTERNS.some((p) => p.test(text))) flags.push('prompt_injection');
-  if (PII_PATTERNS.some((p) => p.test(text))) flags.push('pii_detected');
-  return flags;
-}
+// ── Security patterns (now delegated to ../llm/security.ts) ─────────────────────
+// The `classify` function from llm/security.ts runs regex first (fast, free),
+// then optionally calls an LLM for deeper semantic analysis when configured.
+// Falls back gracefully to regex-only when LLM_API_KEY is not set.
 
 // ── Enrichment Worker ──────────────────────────────────────────────────────────
 
@@ -129,18 +109,23 @@ const securityWorker = new Worker(
   'security-classification',
   async (job: Job) => {
     const { spans } = job.data as { spans: SpanData[] };
-    console.log(`[security] Classifying ${spans?.length ?? 0} spans`);
 
     if (!spans || spans.length === 0) return;
+
+    // Resolve per-project LLM config (project settings > env vars > defaults)
+    const projectId = spans[0]?.project_id;
+    const llmCfg = await resolveConfig(projectId);
+    const mode = isLLMConfigured(llmCfg) ? 'LLM+regex' : 'regex-only';
+    console.log(`[security] Classifying ${spans.length} spans (${mode}, project=${projectId})`);
 
     const ch = getClickHouse();
 
     for (const span of spans) {
-      const textToCheck = [span.input, span.output].filter(Boolean).join(' ');
-      const flags = detectSecurityFlags(textToCheck);
+      const result = await classify(span.input ?? '', span.output ?? '', span.span_type, llmCfg);
 
-      if (flags.length === 0) continue;
+      if (result.flags.length === 0) continue;
 
+      // Update security_flags on the span
       await ch.command({
         query: `
           ALTER TABLE panopticon.spans
@@ -148,12 +133,33 @@ const securityWorker = new Worker(
           WHERE span_id = {spanId: String}
         `,
         query_params: {
-          flags,
+          flags: result.flags,
           spanId: span.span_id,
         },
       });
 
-      console.log(`[security] Flagged span ${span.span_id}: ${flags.join(', ')}`);
+      // Store severity + reasoning in metadata (merge with existing)
+      if (result.severity !== 'none') {
+        const existing = safeJsonParse(span.metadata) ?? {};
+        const merged = {
+          ...(typeof existing === 'object' ? existing : {}),
+          securitySeverity: result.severity,
+          securityReasoning: result.reasoning,
+        };
+        await ch.command({
+          query: `
+            ALTER TABLE panopticon.spans
+            UPDATE metadata = {metadata: String}
+            WHERE span_id = {spanId: String}
+          `,
+          query_params: {
+            metadata: JSON.stringify(merged),
+            spanId: span.span_id,
+          },
+        });
+      }
+
+      console.log(`[security] Flagged span ${span.span_id}: ${result.flags.join(', ')} (${result.severity}) — ${result.reasoning}`);
     }
   },
   { connection },

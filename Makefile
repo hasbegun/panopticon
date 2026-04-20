@@ -9,7 +9,8 @@ API_CONTAINER = panopticon-api
 
 .PHONY: help build dev up down restart logs \
         migrate test lint typecheck \
-        demo demo-sdk demo-reset \
+        demo demo-sdk demo-reset demo-agents \
+        demo-code-review demo-devops demo-security \
         clean nuke status health
 
 # ---------------------------------------------------------------------------
@@ -118,11 +119,28 @@ health: ## Check health of all services
 # ---------------------------------------------------------------------------
 # Demo
 # ---------------------------------------------------------------------------
-demo: ## Seed demo data (8 traces, ~50 spans)
+demo: ## Seed demo data (20 traces, ~150 spans, alerts, audit log)
 	$(COMPOSE_DEV) --profile demo run --rm --build demo
+
+demo-live: ## Run live agent simulator (~2 min of real-time traces for SSE feed)
+	$(COMPOSE_DEV) --profile demo run --rm --build demo-live
 
 demo-sdk: ## Run SDK usage example (3 traces via @panopticon/sdk)
 	$(COMPOSE_DEV) --profile demo run --rm --build demo-sdk
+
+demo-agents: ## Run all 3 sample agents (code-review, devops, security)
+	$(COMPOSE_DEV) --profile demo run --rm --build demo-code-review
+	$(COMPOSE_DEV) --profile demo run --rm --build demo-devops
+	$(COMPOSE_DEV) --profile demo run --rm --build demo-security
+
+demo-code-review: ## Run code review agent demo
+	$(COMPOSE_DEV) --profile demo run --rm --build demo-code-review
+
+demo-devops: ## Run DevOps deploy agent demo
+	$(COMPOSE_DEV) --profile demo run --rm --build demo-devops
+
+demo-security: ## Run security scanner agent demo
+	$(COMPOSE_DEV) --profile demo run --rm --build demo-security
 
 demo-reset: ## Clear all data and re-seed demo
 	$(MAKE) migrate-fresh

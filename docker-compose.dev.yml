@@ -51,6 +51,22 @@ services:
     environment:
       API_URL: "http://api:4400"
       API_KEY: "pan_seed_key_for_dev"
+      CLICKHOUSE_URL: "http://clickhouse:8123"
+    depends_on:
+      - api
+    networks:
+      - panopticon
+    profiles: ["demo"]
+
+  demo-live:
+    build:
+      context: .
+      dockerfile: demo/Dockerfile
+    command: ["bun", "run", "live-agent.ts"]
+    environment:
+      API_URL: "http://api:4400"
+      API_KEY: "pan_seed_key_for_dev"
+      DURATION_SECONDS: "120"
     depends_on:
       - api
     networks:
@@ -61,6 +77,50 @@ services:
     build:
       context: .
       dockerfile: demo/sdk.Dockerfile
+    environment:
+      API_URL: "http://api:4400"
+      API_KEY: "pan_seed_key_for_dev"
+    depends_on:
+      - api
+    networks:
+      - panopticon
+    profiles: ["demo"]
+
+  # ── Sample Agent Demos ──────────────────────────────────────────────────
+
+  demo-code-review:
+    build:
+      context: .
+      dockerfile: demo/agents.Dockerfile
+    command: ["bun", "run", "demo/agents/code-review-agent.ts"]
+    environment:
+      API_URL: "http://api:4400"
+      API_KEY: "pan_seed_key_for_dev"
+    depends_on:
+      - api
+    networks:
+      - panopticon
+    profiles: ["demo"]
+
+  demo-devops:
+    build:
+      context: .
+      dockerfile: demo/agents.Dockerfile
+    command: ["bun", "run", "demo/agents/devops-agent.ts"]
+    environment:
+      API_URL: "http://api:4400"
+      API_KEY: "pan_seed_key_for_dev"
+    depends_on:
+      - api
+    networks:
+      - panopticon
+    profiles: ["demo"]
+
+  demo-security:
+    build:
+      context: .
+      dockerfile: demo/agents.Dockerfile
+    command: ["bun", "run", "demo/agents/security-scanner-agent.ts"]
     environment:
       API_URL: "http://api:4400"
       API_KEY: "pan_seed_key_for_dev"

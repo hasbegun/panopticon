@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Eye, Activity, Network, Shield, Bell, Settings, LayoutDashboard, GitCompare } from 'lucide-react';
+import { Eye, Activity, Network, Shield, Bell, Settings, LayoutDashboard, GitCompare, Sparkles } from 'lucide-react';
 import { ThemeToggle } from './theme-toggle';
 
 const navItems = [
@@ -14,7 +14,8 @@ const navItems = [
   { href: '/compare', label: 'Compare', icon: GitCompare, shortcut: '5' },
   { href: '/security', label: 'Security', icon: Shield, shortcut: '6' },
   { href: '/alerts', label: 'Alerts', icon: Bell, shortcut: '7' },
-  { href: '/settings', label: 'Settings', icon: Settings, shortcut: '8' },
+  { href: '/ask', label: 'Ask AI', icon: Sparkles, shortcut: '8' },
+  { href: '/settings', label: 'Settings', icon: Settings, shortcut: '9' },
 ];
 
 export function Sidebar() {

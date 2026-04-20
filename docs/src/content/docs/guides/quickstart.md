@@ -13,7 +13,7 @@ description: Get Panopticon running in under 5 minutes
 ## 1. Clone & Start
 
 ```bash
-git clone https://github.com/panopticon-oss/panopticon.git
+git clone https://github.com/hasbegun/panopticon.git
 cd panopticon
 cp .env.example .env
 make up

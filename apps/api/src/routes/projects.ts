@@ -71,6 +71,53 @@ projectRoutes.delete('/:id', async (c) => {
   return c.json({ data: { id, deleted: true } });
 });
 
+/** Get project settings */
+projectRoutes.get('/:id/settings', async (c) => {
+  const sql = getPostgres();
+  const id = c.req.param('id');
+  const [project] = await sql`
+    SELECT settings FROM projects WHERE id = ${id}
+  `;
+  if (!project) {
+    return c.json({ error: 'not_found', message: 'Project not found', statusCode: 404 }, 404);
+  }
+  return c.json({ data: typeof project.settings === 'string' ? JSON.parse(project.settings) : project.settings });
+});
+
+/** Update project settings (partial merge) */
+projectRoutes.put('/:id/settings', async (c) => {
+  const sql = getPostgres();
+  const id = c.req.param('id');
+  const body = await c.req.json();
+
+  // Fetch existing settings
+  const [existing] = await sql`
+    SELECT settings FROM projects WHERE id = ${id}
+  `;
+  if (!existing) {
+    return c.json({ error: 'not_found', message: 'Project not found', statusCode: 404 }, 404);
+  }
+
+  const current = typeof existing.settings === 'string' ? JSON.parse(existing.settings) : (existing.settings ?? {});
+  const merged = { ...current, ...body };
+
+  // If LLM settings are provided, mask the API key in the response but store the real one
+  const [updated] = await sql`
+    UPDATE projects SET settings = ${JSON.stringify(merged)}::jsonb, updated_at = NOW()
+    WHERE id = ${id}
+    RETURNING settings
+  `;
+
+  const settings = typeof updated.settings === 'string' ? JSON.parse(updated.settings) : updated.settings;
+
+  // Mask API key in response
+  if (settings.llm?.apiKey) {
+    settings.llm.apiKey = settings.llm.apiKey.slice(0, 8) + '...' + settings.llm.apiKey.slice(-4);
+  }
+
+  return c.json({ data: settings });
+});
+
 /** Regenerate API key for a project */
 projectRoutes.post('/:id/rotate-key', async (c) => {
   const sql = getPostgres();

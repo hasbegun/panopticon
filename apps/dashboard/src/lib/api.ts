@@ -295,3 +295,95 @@ export function fetchAuditLog(apiKey: string, projectId: string, limit = 100, of
     { apiKey, params: { project_id: projectId, limit, offset } },
   );
 }
+
+// ── Project Settings ──────────────────────────────────────────────────────────
+
+export interface ProjectSettings {
+  retentionDays?: number;
+  piiRedaction?: boolean;
+  securityClassification?: boolean;
+  llm?: {
+    provider?: 'openai' | 'anthropic' | 'ollama';
+    apiKey?: string;
+    model?: string;
+    baseUrl?: string;
+  };
+}
+
+export function fetchProjectSettings(apiKey: string, projectId: string) {
+  return apiFetch<{ data: ProjectSettings }>(
+    `/v1/projects/${projectId}/settings`,
+    { apiKey },
+  );
+}
+
+export async function updateProjectSettings(
+  apiKey: string,
+  projectId: string,
+  settings: Partial<ProjectSettings>,
+) {
+  const url = new URL(`${BASE}/v1/projects/${projectId}/settings`, window.location.origin);
+  const res = await fetch(url.toString(), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+    body: JSON.stringify(settings),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.message ?? `API error ${res.status}`);
+  }
+  return res.json() as Promise<{ data: ProjectSettings }>;
+}
+
+// ── AI / LLM-Powered ─────────────────────────────────────────────────────────
+
+export interface TraceAnalysis {
+  traceId: string;
+  summary: string;
+  rootCause: string | null;
+  impact: string;
+  recommendation: string;
+  severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
+}
+
+export interface NLQueryResult {
+  question: string;
+  description: string;
+  sql: string;
+  results: unknown[];
+  count: number;
+}
+
+export async function analyzeTrace(apiKey: string, traceId: string) {
+  const url = new URL(`${BASE}/v1/ai/traces/${traceId}/analyze`, window.location.origin);
+  const res = await fetch(url.toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.message ?? `API error ${res.status}`);
+  }
+  return res.json() as Promise<{ data: TraceAnalysis }>;
+}
+
+export function fetchTraceAnalysis(apiKey: string, traceId: string) {
+  return apiFetch<{ data: TraceAnalysis }>(
+    `/v1/ai/traces/${traceId}/analysis`,
+    { apiKey },
+  );
+}
+
+export async function askQuery(apiKey: string, projectId: string, question: string) {
+  const url = new URL(`${BASE}/v1/query`, window.location.origin);
+  const res = await fetch(url.toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+    body: JSON.stringify({ question, project_id: projectId }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.message ?? `API error ${res.status}`);
+  }
+  return res.json() as Promise<{ data: NLQueryResult }>;
+}

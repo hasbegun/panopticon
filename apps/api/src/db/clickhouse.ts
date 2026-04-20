@@ -76,6 +76,25 @@ export async function initClickHouse(): Promise<void> {
     `,
   });
 
+  await ch.command({
+    query: `
+      CREATE TABLE IF NOT EXISTS panopticon.trace_analysis (
+        trace_id        String,
+        project_id      String,
+        summary         String DEFAULT '',
+        root_cause      String DEFAULT '',
+        impact          String DEFAULT '',
+        recommendation  String DEFAULT '',
+        severity        String DEFAULT 'info',
+        model           String DEFAULT '',
+        created_at      DateTime64(3) DEFAULT now64(3)
+      )
+      ENGINE = ReplacingMergeTree(created_at)
+      ORDER BY (project_id, trace_id)
+      TTL toDateTime(created_at) + INTERVAL 30 DAY
+    `,
+  });
+
   console.log('✅ ClickHouse schema initialized');
 }
 

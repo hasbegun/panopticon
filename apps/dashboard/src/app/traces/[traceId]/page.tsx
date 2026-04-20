@@ -12,9 +12,11 @@ import {
   ShieldAlert,
   X,
   ChevronRight,
+  Sparkles,
+  Loader2,
 } from 'lucide-react';
 import { useProject } from '@/lib/store';
-import { fetchTrace, type SpanRow } from '@/lib/api';
+import { fetchTrace, analyzeTrace, type SpanRow, type TraceAnalysis } from '@/lib/api';
 import { getSpanColor } from '@/lib/span-colors';
 import { ProjectSetupBanner } from '@/components/project-setup';
 
@@ -208,6 +210,23 @@ export default function TraceDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
+  const [analysis, setAnalysis] = useState<TraceAnalysis | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [showAnalysis, setShowAnalysis] = useState(false);
+
+  const handleAnalyze = async () => {
+    if (!isConfigured || analyzing) return;
+    setAnalyzing(true);
+    setShowAnalysis(true);
+    try {
+      const r = await analyzeTrace(apiKey, traceId);
+      setAnalysis(r.data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Analysis failed');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
 
   useEffect(() => {
     if (!isConfigured || !traceId) return;
@@ -261,7 +280,7 @@ export default function TraceDetailPage() {
           </div>
         )}
 
-        {!loading && spans.length > 0 && (
+        {!loading && spans.length > 0 && (<>
           <div className="flex flex-wrap gap-4 text-sm">
             <span className="flex items-center gap-1.5">
               <Bot className="h-4 w-4 text-muted-foreground" />
@@ -285,8 +304,70 @@ export default function TraceDetailPage() {
               {traceStatus === 'error' && <AlertCircle className="h-3 w-3" />}
               {traceStatus}
             </span>
+            <button
+              onClick={handleAnalyze}
+              disabled={analyzing}
+              className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-violet-500/30 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-400 transition-colors hover:bg-violet-500/20 disabled:opacity-50"
+            >
+              {analyzing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              {analyzing ? 'Analyzing...' : 'Analyze with AI'}
+            </button>
           </div>
-        )}
+
+          {/* AI Analysis Panel */}
+          {showAnalysis && (
+            <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-violet-400">
+                  <Sparkles className="h-4 w-4" />
+                  AI Analysis
+                </h3>
+                <button onClick={() => setShowAnalysis(false)} className="rounded p-1 text-muted-foreground hover:bg-muted">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              {analyzing ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Analyzing trace with LLM...
+                </div>
+              ) : analysis ? (
+                <div className="space-y-3 text-sm">
+                  <div>
+                    <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Summary</span>
+                    <p className="mt-1">{analysis.summary}</p>
+                  </div>
+                  {analysis.rootCause && (
+                    <div>
+                      <span className="text-xs font-medium uppercase tracking-wider text-red-400">Root Cause</span>
+                      <p className="mt-1">{analysis.rootCause}</p>
+                    </div>
+                  )}
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Impact</span>
+                      <p className="mt-1">{analysis.impact}</p>
+                    </div>
+                    <div className="flex-1">
+                      <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Recommendation</span>
+                      <p className="mt-1">{analysis.recommendation}</p>
+                    </div>
+                  </div>
+                  <div>
+                    <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${
+                      analysis.severity === 'critical' ? 'border-red-500/30 bg-red-500/10 text-red-400' :
+                      analysis.severity === 'high' ? 'border-orange-500/30 bg-orange-500/10 text-orange-400' :
+                      analysis.severity === 'medium' ? 'border-yellow-500/30 bg-yellow-500/10 text-yellow-400' :
+                      analysis.severity === 'low' ? 'border-blue-500/30 bg-blue-500/10 text-blue-400' :
+                      'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                    }`}>
+                      {analysis.severity}
+                    </span>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          )}
+        </>)}
       </div>
 
       {loading && (
