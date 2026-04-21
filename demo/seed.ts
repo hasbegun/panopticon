@@ -815,12 +815,20 @@ async function seedAuditLog(): Promise<void> {
 // ═══════════════════════════════════════════════════════════════════════════
 
 async function seedProjectSettings(): Promise<void> {
+  // Only seed LLM settings when a provider is explicitly configured via env.
+  // Otherwise the worker will try to call a non-existent Ollama and log errors.
+  const provider = process.env.LLM_PROVIDER;
+  if (!provider) {
+    console.log('  ⏭️  Skipped (set LLM_PROVIDER env to enable — e.g. ollama, openai, anthropic)');
+    return;
+  }
+
   const settings = {
     llm: {
-      provider: 'ollama',
-      apiKey: '',
-      model: 'llama3.1',
-      baseUrl: 'http://host.docker.internal:11434/v1',
+      provider,
+      apiKey: process.env.LLM_API_KEY ?? '',
+      model: process.env.LLM_MODEL ?? (provider === 'ollama' ? 'llama3.2' : provider === 'anthropic' ? 'claude-3-5-haiku-20241022' : 'gpt-4o-mini'),
+      baseUrl: process.env.LLM_BASE_URL ?? (provider === 'ollama' ? 'http://host.docker.internal:11434/v1' : undefined),
     },
   };
 
@@ -832,7 +840,7 @@ async function seedProjectSettings(): Promise<void> {
   if (!res.ok) {
     console.warn(`  ⚠ LLM settings failed: ${res.status} (non-critical — settings API may not be available)`);
   } else {
-    console.log('  ✅ LLM settings: Ollama (llama3.1 via host.docker.internal)');
+    console.log(`  ✅ LLM settings: ${provider} (${settings.llm.model})`);
   }
 }
 
@@ -917,7 +925,7 @@ async function main() {
   console.log(`║  Security: ${String(securitySpans).padStart(4)}  (injection + PII + secrets)         ║`);
   console.log(`║  Alerts:      3  rules created                              ║`);
   console.log(`║  Audit:       5  log entries                                ║`);
-  console.log(`║  LLM:    Ollama configured (demo)                           ║`);
+  console.log(`║  LLM:    ${process.env.LLM_PROVIDER ? process.env.LLM_PROVIDER + ' configured' : 'skipped (no LLM_PROVIDER)'}${' '.repeat(Math.max(0, 38 - (process.env.LLM_PROVIDER ? process.env.LLM_PROVIDER.length + 11 : 26)))}║`);
   console.log('╠══════════════════════════════════════════════════════════════╣');
   console.log('║                                                              ║');
   console.log('║  Dashboard: http://localhost:3000                            ║');

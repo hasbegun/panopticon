@@ -47,7 +47,7 @@ describe('isLLMConfigured', () => {
 
   test('returns true for ollama even without apiKey', () => {
     const cfg: LLMConfig = {
-      provider: 'ollama', apiKey: '', model: 'llama3.1',
+      provider: 'ollama', apiKey: '', model: 'llama3.2',
       temperature: 0, maxTokens: 1024,
     };
     expect(isLLMConfigured(cfg)).toBe(true);
@@ -77,7 +77,7 @@ describe('LLMConfig shape', () => {
     const cfg: LLMConfig = {
       provider: 'ollama',
       apiKey: '',
-      model: 'llama3.1',
+      model: 'llama3.2',
       baseUrl: 'http://host.docker.internal:11434/v1',
       temperature: 0,
       maxTokens: 1024,
@@ -97,7 +97,7 @@ describe('resolveConfig merge semantics', () => {
       temperature: 0, maxTokens: 1024,
     };
 
-    const proj: { provider?: 'openai' | 'anthropic' | 'ollama'; apiKey?: string; model?: string; baseUrl?: string } = { provider: 'ollama', model: 'llama3.1' };
+    const proj: { provider?: 'openai' | 'anthropic' | 'ollama'; apiKey?: string; model?: string; baseUrl?: string } = { provider: 'ollama', model: 'llama3.2' };
 
     // Simulated merge (same as resolveConfig logic)
     const provider = proj.provider ?? env.provider;
@@ -111,7 +111,7 @@ describe('resolveConfig merge semantics', () => {
     };
 
     expect(merged.provider).toBe('ollama');
-    expect(merged.model).toBe('llama3.1');
+    expect(merged.model).toBe('llama3.2');
     // apiKey falls back to env since proj has none
     expect(merged.apiKey).toBe('env-key');
   });

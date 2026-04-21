@@ -9,7 +9,7 @@ import { ProjectSetupBanner } from '@/components/project-setup';
 const PROVIDERS = [
   { value: 'openai', label: 'OpenAI', placeholder: 'sk-...', modelHint: 'gpt-4o-mini' },
   { value: 'anthropic', label: 'Anthropic', placeholder: 'sk-ant-...', modelHint: 'claude-3-5-haiku-20241022' },
-  { value: 'ollama', label: 'Ollama (Local)', placeholder: 'Not required', modelHint: 'llama3.1' },
+  { value: 'ollama', label: 'Ollama (Local)', placeholder: 'Not required', modelHint: 'llama3.2' },
 ] as const;
 
 export default function SettingsPage() {

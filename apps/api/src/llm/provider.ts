@@ -26,7 +26,7 @@ export interface LLMResponse {
 }
 
 export interface LLMConfig {
-  provider: 'openai' | 'anthropic' | 'ollama';
+  provider: 'openai' | 'anthropic' | 'ollama' | '';
   apiKey: string;
   model: string;
   baseUrl?: string;
@@ -47,7 +47,7 @@ export interface LLMProjectSettings {
 const DEFAULT_MODELS: Record<string, string> = {
   openai: 'gpt-4o-mini',
   anthropic: 'claude-3-5-haiku-20241022',
-  ollama: 'llama3.1',
+  ollama: 'llama3.2',
 };
 
 // Inside Docker, reach host Ollama via extra_hosts mapping
@@ -58,12 +58,13 @@ let _envConfig: LLMConfig | null = null;
 /** Read config from environment variables (server-level defaults) */
 export function getEnvLLMConfig(): LLMConfig {
   if (!_envConfig) {
-    const provider = (process.env.LLM_PROVIDER ?? 'openai') as LLMConfig['provider'];
+    const raw = (process.env.LLM_PROVIDER ?? '').trim();
+    const provider = (['openai', 'anthropic', 'ollama'].includes(raw) ? raw : '') as LLMConfig['provider'];
     _envConfig = {
       provider,
       apiKey: process.env.LLM_API_KEY ?? '',
-      model: process.env.LLM_MODEL ?? DEFAULT_MODELS[provider] ?? 'gpt-4o-mini',
-      baseUrl: process.env.LLM_BASE_URL,
+      model: process.env.LLM_MODEL || (provider ? DEFAULT_MODELS[provider] ?? 'gpt-4o-mini' : ''),
+      baseUrl: process.env.LLM_BASE_URL || (provider === 'ollama' ? OLLAMA_DEFAULT_URL : undefined),
       temperature: Number(process.env.LLM_TEMPERATURE ?? '0'),
       maxTokens: Number(process.env.LLM_MAX_TOKENS ?? '1024'),
     };
@@ -116,6 +117,7 @@ export async function resolveConfig(
 /** Check if a given config (or the env default) is usable */
 export function isLLMConfigured(cfg?: LLMConfig): boolean {
   const c = cfg ?? getEnvLLMConfig();
+  if (!c.provider) return false;
   return c.provider === 'ollama' || !!c.apiKey;
 }
 

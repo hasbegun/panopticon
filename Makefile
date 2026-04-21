@@ -7,7 +7,7 @@ COMPOSE       = docker compose
 COMPOSE_DEV   = $(COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml
 API_CONTAINER = panopticon-api
 
-.PHONY: help build dev up down restart logs \
+.PHONY: help build rebuild dev up down restart logs \
         migrate test lint typecheck \
         demo demo-sdk demo-reset demo-agents \
         demo-code-review demo-devops demo-security \
@@ -31,6 +31,10 @@ build-api: ## Build only the API image
 
 build-dashboard: ## Build only the dashboard image
 	$(COMPOSE) build dashboard
+
+rebuild: ## Rebuild all containers from scratch (no cache)
+	$(COMPOSE_DEV) build --no-cache
+	$(COMPOSE_DEV) up --build -d
 
 # ---------------------------------------------------------------------------
 # Run
@@ -69,7 +73,15 @@ migrate: ## Run DB migrations inside API container
 	$(COMPOSE_DEV) exec api bun run src/db/migrate.ts
 
 migrate-fresh: ## Drop and recreate (DESTRUCTIVE)
-	$(COMPOSE_DEV) exec postgres psql -U panopticon -c "DROP DATABASE IF EXISTS panopticon; CREATE DATABASE panopticon;"
+	$(COMPOSE_DEV) stop api worker || true
+	@sleep 2
+	$(COMPOSE_DEV) exec postgres psql -U panopticon -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='panopticon' AND pid <> pg_backend_pid();" || true
+	@sleep 1
+	$(COMPOSE_DEV) exec postgres psql -U panopticon -d postgres -c "DROP DATABASE IF EXISTS panopticon WITH (FORCE);"
+	$(COMPOSE_DEV) exec postgres psql -U panopticon -d postgres -c "CREATE DATABASE panopticon;"
+	$(COMPOSE_DEV) start api worker
+	@echo "Waiting for API to start..."
+	@sleep 5
 	$(MAKE) migrate
 
 # ---------------------------------------------------------------------------

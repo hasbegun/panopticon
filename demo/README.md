@@ -197,18 +197,56 @@ After running the demo, here's exactly what to check on each dashboard page:
 **URL:** `http://localhost:3000/settings`
 
 - **LLM configuration** — provider, model, API key, base URL
-- Pre-populated with Ollama (llama3.1) from the seed data
+- Only populated if you set `LLM_PROVIDER` in `.env` (see below)
 
-**Verify:** Form shows Ollama as the provider and llama3.1 as the model.
+**Verify:** Form reflects whatever you configured in `.env`.
 
 ### 9. Ask AI
 
 **URL:** `http://localhost:3000/ask`
 
 - Natural language query interface for your trace data
-- Requires a configured LLM provider (Ollama, OpenAI, or Anthropic)
+- Requires a configured LLM provider (see below)
 
-**Verify:** If Ollama is running locally, try: "Show me all traces with errors in the last hour"
+**Verify:** With an LLM configured, try: "Show me all traces with errors in the last hour"
+
+---
+
+## LLM Configuration
+
+LLM features (semantic security, trace analysis, natural language query) are **optional**. Configure them in your `.env` file:
+
+```bash
+# Copy the example if you haven't already
+cp .env.example .env
+```
+
+Then uncomment **one** provider block in `.env`:
+
+```bash
+# ── OpenAI ──
+LLM_PROVIDER=openai
+LLM_API_KEY=sk-...
+LLM_MODEL=gpt-4o-mini
+
+# ── Anthropic ──
+LLM_PROVIDER=anthropic
+LLM_API_KEY=sk-ant-...
+LLM_MODEL=claude-3-5-haiku-20241022
+
+# ── Ollama (local, no API key needed) ──
+LLM_PROVIDER=ollama
+LLM_MODEL=llama3.2
+LLM_BASE_URL=http://host.docker.internal:11434/v1
+```
+
+After editing `.env`, restart the services:
+
+```bash
+make dev-d
+```
+
+When no `LLM_PROVIDER` is set, security classification falls back to regex (still functional, just less nuanced). The Ask AI and Analyze features will be unavailable.
 
 ---
 
