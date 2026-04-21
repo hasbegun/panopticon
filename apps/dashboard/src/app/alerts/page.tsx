@@ -215,7 +215,7 @@ export default function AlertsPage() {
                         </div>
                         <div className="mt-0.5 text-xs text-muted-foreground">
                           {rule.condition.metric} {rule.condition.operator} {rule.condition.threshold} for {rule.condition.window_minutes}min
-                          {rule.channels.length > 0 && ` → ${rule.channels.map((c) => c.type).join(', ')}`}
+                          {Array.isArray(rule.channels) && rule.channels.length > 0 && ` → ${rule.channels.map((c) => c.type).join(', ')}`}
                         </div>
                         {rule.last_fired_at && (
                           <div className="mt-0.5 text-[10px] text-amber-400">Last fired: {formatTs(rule.last_fired_at)}</div>

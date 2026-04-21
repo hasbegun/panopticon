@@ -66,6 +66,24 @@ const FORBIDDEN_PATTERNS = [
   /;\s*\w/,  // multiple statements
 ];
 
+/** Extract a JSON object from an LLM response that may contain markdown fences or preamble */
+function extractJSON(text: string): Record<string, unknown> | null {
+  try { return JSON.parse(text); } catch { /* continue */ }
+
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenceMatch) {
+    try { return JSON.parse(fenceMatch[1].trim()); } catch { /* continue */ }
+  }
+
+  const braceStart = text.indexOf('{');
+  const braceEnd = text.lastIndexOf('}');
+  if (braceStart !== -1 && braceEnd > braceStart) {
+    try { return JSON.parse(text.slice(braceStart, braceEnd + 1)); } catch { /* give up */ }
+  }
+
+  return null;
+}
+
 export async function translateQuery(
   question: string,
   projectId: string,
@@ -76,10 +94,24 @@ export async function translateQuery(
     { role: 'user', content: `Project ID: ${projectId}\nQuestion: ${question}` },
   ];
 
-  const response = await llmComplete(messages, { ...llmCfg, maxTokens: 512 });
-  const parsed = JSON.parse(response.content);
+  const response = await llmComplete(messages, { ...llmCfg, maxTokens: 1024 });
+  const parsed = extractJSON(response.content);
 
-  const sql = (parsed.sql ?? '').trim();
+  if (!parsed) {
+    throw new Error(
+      'Could not parse LLM response. Try rephrasing as a data question, e.g. "Show me error traces from the last hour".',
+    );
+  }
+
+  const sql = (typeof parsed.sql === 'string' ? parsed.sql : '').trim();
+
+  if (!sql) {
+    // LLM understood the question but couldn't produce SQL — return a helpful description
+    const desc = typeof parsed.description === 'string' ? parsed.description : String(parsed.description ?? '');
+    throw new Error(
+      desc || 'This question doesn\'t map to a data query. Try asking about traces, agents, errors, or MCP servers.',
+    );
+  }
 
   // Safety check: reject non-SELECT or multi-statement queries
   if (!sql.toUpperCase().startsWith('SELECT')) {
@@ -93,7 +125,7 @@ export async function translateQuery(
 
   return {
     sql,
-    description: parsed.description ?? '',
+    description: typeof parsed.description === 'string' ? parsed.description : '',
     params: { projectId },
   };
 }

@@ -260,24 +260,104 @@ curl http://localhost:4400/health
 
 # List traces
 curl -s http://localhost:4400/v1/traces?project_id=seed \
-  -H "x-api-key: pan_seed_key_for_dev" | jq '.traces | length'
+  -H "x-api-key: pan_seed_key_for_dev" | python3 -m json
 
 # Get metrics
 curl -s http://localhost:4400/v1/traces/metrics?project_id=seed \
-  -H "x-api-key: pan_seed_key_for_dev" | jq
+  -H "x-api-key: pan_seed_key_for_dev" | python3 -m json
 
 # Security summary
 curl -s http://localhost:4400/v1/security?project_id=seed \
-  -H "x-api-key: pan_seed_key_for_dev" | jq
+  -H "x-api-key: pan_seed_key_for_dev" | python3 -m json
 
 # Topology graph
 curl -s http://localhost:4400/v1/topology?project_id=seed \
-  -H "x-api-key: pan_seed_key_for_dev" | jq
+  -H "x-api-key: pan_seed_key_for_dev" | python3 -m json
 
 # Alert rules
 curl -s http://localhost:4400/v1/alerts?project_id=seed \
-  -H "x-api-key: pan_seed_key_for_dev" | jq
+  -H "x-api-key: pan_seed_key_for_dev" | python3 -m json
 ```
+
+---
+
+## UI Demo Walkthrough (5 minutes)
+
+A scripted walkthrough you can use to present Panopticon to others. Open `http://localhost:3000` and follow the steps below.
+
+> **Tip:** Use keyboard shortcuts `⌘1` through `⌘9` to jump between pages instantly.
+
+### Setup (30s)
+
+1. Open the dashboard — the **Project Setup Banner** appears at the top
+2. Enter **Project ID:** `seed` and **API Key:** `pan_seed_key_for_dev`
+3. The banner disappears and the Dashboard page populates with live metrics
+
+**Talking point:** *"Zero config — agents send spans via one API call. The dashboard connects to any project by ID."*
+
+### Act 1: The Big Picture (60s)
+
+**Dashboard** (`/` or `⌘1`)
+- Point out the 6 stat cards: Traces, Spans, Agents, Error Rate, Avg Latency, P99 Latency
+- Note the error rate — "we have some failures, let's investigate"
+
+**Topology** (`/topology` or `⌘4`)
+- A force-directed graph shows agents (planner, coder, reviewer, ops, security) connected to MCP servers (filesystem, github, k8s, slack)
+- Drag nodes around to explore the graph
+- "This is auto-discovered from span data — no configuration needed. You instantly see which agents talk to which tools."
+
+### Act 2: Tracing Deep Dive (90s)
+
+**Traces** (`/traces` or `⌘2`)
+- Show the list of ~22 traces with agent names, durations, span counts, status badges
+- Click **"prompt-injection-blocked"** — this opens the trace detail with waterfall view
+- Walk through the span tree: `agent_step → llm_call` with a red error badge and security flag
+- "Every span is clickable — you see input, output, metadata, timing, and security flags inline"
+
+- Go back, click **"deploy-staging"** — a successful multi-step trace
+- Show the full tree: `agent_step → mcp_request (k8s) → tool_call (kubectl) → llm_call`
+- "This is the full reasoning chain — not just LLM calls. You see why the agent chose kubectl and what it returned."
+
+**Compare** (`/compare` or `⌘5`)
+- Select **"deploy-staging"** and **"deploy-production-fail"**
+- Show the side-by-side diff: same agent, different outcomes
+- "Instant diff — you can compare any two traces to find what changed. Great for debugging regressions."
+
+### Act 3: Live Monitoring (60s)
+
+> **Before this step:** Run `make demo-live` in a separate terminal
+
+**Live** (`/live` or `⌘3`)
+- Real-time charts animate: throughput, latency, error rate
+- The **live span feed** at the bottom scrolls with incoming spans (SSE-powered)
+- Cost tracking table shows token usage per model
+- "This is true real-time — no polling. Spans appear within 1 second of ingestion via Server-Sent Events."
+
+### Act 4: Security (45s)
+
+**Security** (`/security` or `⌘6`)
+- Show the security flags summary: prompt injection, PII detected, sensitive data, unauthorized access
+- Point out the flagged spans with severity levels
+- "Security classification runs at ingestion time — hybrid regex + LLM. Catches prompt injection, leaked secrets, PII. All without any agent-side configuration."
+
+### Act 5: Alerts (30s)
+
+**Alerts** (`/alerts` or `⌘7`)
+- Show the 3 pre-configured alert rules: error rate > 10%, P95 latency > 5s, any security flags
+- "Define rules with a simple DSL. They evaluate continuously and dispatch to Slack or webhooks with configurable cooldowns."
+
+### Closing (30s)
+
+**Settings** (`/settings` or `⌘9`)
+- Show the LLM configuration panel (if configured)
+- "LLM features are optional and pluggable — OpenAI, Anthropic, or Ollama for fully local operation"
+
+**Key differentiators to emphasize:**
+- First-class MCP protocol awareness (not just LLM calls)
+- Agent-rooted traces (full reasoning chains)
+- Security built-in at the platform level
+- True real-time monitoring (SSE, not polling)
+- 100% open source, runs locally, no cloud dependency
 
 ---
 

@@ -165,6 +165,7 @@ async function openaiComplete(messages: LLMMessage[], cfg: LLMConfig): Promise<L
       max_tokens: cfg.maxTokens,
       response_format: { type: 'json_object' },
     }),
+    signal: AbortSignal.timeout(30_000),
   });
 
   if (!res.ok) {
@@ -211,6 +212,7 @@ async function anthropicComplete(messages: LLMMessage[], cfg: LLMConfig): Promis
       ...(systemMsg ? { system: systemMsg.content } : {}),
       messages: chatMsgs.map((m) => ({ role: m.role, content: m.content })),
     }),
+    signal: AbortSignal.timeout(30_000),
   });
 
   if (!res.ok) {

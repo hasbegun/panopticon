@@ -102,6 +102,26 @@ function formatSpanTree(spans: SpanForAnalysis[]): string {
   return lines.join('\n');
 }
 
+const VALID_SEVERITIES = new Set(['critical', 'high', 'medium', 'low', 'info']);
+
+/** Extract a JSON object from an LLM response that may contain markdown fences or preamble */
+function extractJSON(text: string): Record<string, unknown> | null {
+  try { return JSON.parse(text); } catch { /* continue */ }
+
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenceMatch) {
+    try { return JSON.parse(fenceMatch[1].trim()); } catch { /* continue */ }
+  }
+
+  const braceStart = text.indexOf('{');
+  const braceEnd = text.lastIndexOf('}');
+  if (braceStart !== -1 && braceEnd > braceStart) {
+    try { return JSON.parse(text.slice(braceStart, braceEnd + 1)); } catch { /* give up */ }
+  }
+
+  return null;
+}
+
 function safeJsonSummary(metadata: string): string {
   try {
     const m = JSON.parse(metadata);
@@ -124,14 +144,18 @@ export async function analyzeTrace(spans: SpanForAnalysis[], llmCfg?: Partial<LL
     { role: 'user', content: `Trace with ${spans.length} spans:\n\n${tree}` },
   ];
 
-  const response = await llmComplete(messages, { ...llmCfg, maxTokens: 512 });
-  const parsed = JSON.parse(response.content);
+  const response = await llmComplete(messages, { ...llmCfg, maxTokens: 1024 });
+  const parsed = extractJSON(response.content);
+
+  if (!parsed) {
+    throw new Error('Could not parse LLM analysis response');
+  }
 
   return {
-    summary: parsed.summary ?? 'Analysis unavailable',
-    rootCause: parsed.rootCause ?? null,
-    impact: parsed.impact ?? '',
-    recommendation: parsed.recommendation ?? '',
-    severity: parsed.severity ?? 'info',
+    summary: typeof parsed.summary === 'string' ? parsed.summary : 'Analysis unavailable',
+    rootCause: typeof parsed.rootCause === 'string' ? parsed.rootCause : null,
+    impact: typeof parsed.impact === 'string' ? parsed.impact : '',
+    recommendation: typeof parsed.recommendation === 'string' ? parsed.recommendation : '',
+    severity: (typeof parsed.severity === 'string' && VALID_SEVERITIES.has(parsed.severity) ? parsed.severity : 'info') as TraceAnalysis['severity'],
   };
 }
