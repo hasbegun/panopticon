@@ -74,7 +74,7 @@ An AI deploy agent that deploys to staging (success), then attempts production (
 An AI security scanner that scans config files for leaked secrets, audits data exports for PII, and blocks a prompt injection attempt.
 
 **What it shows:**
-- Security flag categories: `sensitive_data`, `pii_detected`, `prompt_injection`, `data_exfiltration`
+- Security flag categories: `sensitive_data`, `pii_detected`, `prompt_injection`, `unauthorized_access`
 - How Panopticon's regex classifier auto-detects SSNs, emails, and injection patterns
 - Security dashboard findings with severity levels
 - Audit trail for blocked threats
@@ -172,7 +172,7 @@ After running the demo, here's exactly what to check on each dashboard page:
 - **Findings table** — each flagged span with its flags, severity, and trace link
 - **Tool access matrix** — which agents called which MCP tools
 
-**Verify:** See entries for `prompt_injection`, `pii_detected`, `sensitive_data`, `data_exfiltration`. Click a finding to jump to the trace detail.
+**Verify:** See entries for `prompt_injection`, `pii_detected`, `sensitive_data`, `unauthorized_access`. Click a finding to jump to the trace detail.
 
 ### 6. Alerts
 
