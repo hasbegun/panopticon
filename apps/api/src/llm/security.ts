@@ -133,7 +133,7 @@ export async function classifyWithLLM(
     const response = await llmComplete(messages, { ...llmCfg, maxTokens: 512 });
     const parsed = extractJSON(response.content);
     if (!parsed) {
-      console.warn('[llm-security] Could not parse LLM response as JSON, falling back to regex');
+      console.warn('[llm-security] Could not parse LLM response as JSON, falling back to regex. Raw response:', response.content.slice(0, 300));
       return classifyWithRegex([input, output].filter(Boolean).join(' '));
     }
 

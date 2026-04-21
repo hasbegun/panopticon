@@ -151,6 +151,7 @@ export async function llmComplete(
 async function openaiComplete(messages: LLMMessage[], cfg: LLMConfig): Promise<LLMResponse> {
   const baseUrl = cfg.baseUrl
     ?? (cfg.provider === 'ollama' ? OLLAMA_DEFAULT_URL : 'https://api.openai.com/v1');
+  const timeoutMs = cfg.provider === 'ollama' ? 120_000 : 30_000;
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (cfg.apiKey) headers['Authorization'] = `Bearer ${cfg.apiKey}`;
@@ -165,7 +166,7 @@ async function openaiComplete(messages: LLMMessage[], cfg: LLMConfig): Promise<L
       max_tokens: cfg.maxTokens,
       response_format: { type: 'json_object' },
     }),
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
 
   if (!res.ok) {
