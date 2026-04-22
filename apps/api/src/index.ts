@@ -11,7 +11,22 @@ import { topologyRoutes } from './routes/topology.js';
 import { securityRoutes } from './routes/security.js';
 import { alertRoutes } from './routes/alerts.js';
 import { queryRoutes } from './routes/query.js';
+import { authRoutes } from './routes/auth.js';
+import { sessionRoutes } from './routes/sessions.js';
 import { authMiddleware } from './middleware/auth.js';
+import { initPostgres } from './db/postgres.js';
+import { initClickHouse } from './db/clickhouse.js';
+
+// Auto-run schema migrations on startup
+(async () => {
+  try {
+    await initPostgres();
+    await initClickHouse();
+    console.log('✅ Database schema initialized');
+  } catch (err) {
+    console.error('❌ Schema init failed:', err);
+  }
+})();
 
 const app = new Hono();
 
@@ -22,6 +37,7 @@ app.use('*', secureHeaders());
 
 // Public routes (no auth)
 app.route('/health', healthRoutes);
+app.route('/auth', authRoutes);
 
 // API v1 routes (auth required)
 const v1 = new Hono();
@@ -34,6 +50,7 @@ v1.route('/security', securityRoutes);
 v1.route('/alerts', alertRoutes);
 v1.route('/query', queryRoutes);
 v1.route('/ai', queryRoutes);
+v1.route('/sessions', sessionRoutes);
 
 app.route('/v1', v1);
 

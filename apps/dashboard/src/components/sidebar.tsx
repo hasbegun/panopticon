@@ -3,8 +3,42 @@
 import { useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Eye, Activity, Network, Shield, Bell, Settings, LayoutDashboard, GitCompare, Sparkles } from 'lucide-react';
+import { Eye, Activity, Network, Shield, Bell, Settings, LayoutDashboard, GitCompare, Sparkles, LogOut, User, Users } from 'lucide-react';
 import { ThemeToggle } from './theme-toggle';
+import { useAuth } from '@/lib/auth';
+
+function UserFooter() {
+  const { user, logout } = useAuth();
+  const router = useRouter();
+
+  if (!user) return null;
+
+  const initials = (user.name || user.email)
+    .split(/[\s@]/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((s) => s[0].toUpperCase())
+    .join('');
+
+  return (
+    <div className="flex items-center gap-2 rounded-md px-1 py-1.5">
+      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
+        {initials || <User className="h-3.5 w-3.5" />}
+      </div>
+      <div className="flex-1 overflow-hidden">
+        <p className="truncate text-xs font-medium">{user.name || user.email}</p>
+        {user.name && <p className="truncate text-[10px] text-muted-foreground">{user.email}</p>}
+      </div>
+      <button
+        onClick={() => { logout(); router.push('/login'); }}
+        title="Sign out"
+        className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        <LogOut className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
 
 const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard, shortcut: '1' },
@@ -14,8 +48,9 @@ const navItems = [
   { href: '/compare', label: 'Compare', icon: GitCompare, shortcut: '5' },
   { href: '/security', label: 'Security', icon: Shield, shortcut: '6' },
   { href: '/alerts', label: 'Alerts', icon: Bell, shortcut: '7' },
-  { href: '/ask', label: 'Ask AI', icon: Sparkles, shortcut: '8' },
-  { href: '/settings', label: 'Settings', icon: Settings, shortcut: '9' },
+  { href: '/sessions', label: 'Sessions', icon: Users, shortcut: '8' },
+  { href: '/ask', label: 'Ask AI', icon: Sparkles, shortcut: '9' },
+  { href: '/settings', label: 'Settings', icon: Settings, shortcut: '0' },
 ];
 
 export function Sidebar() {
@@ -64,9 +99,12 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className="flex items-center justify-between border-t border-border p-4">
-        <p className="text-xs text-muted-foreground">v0.1.0</p>
-        <ThemeToggle />
+      <div className="space-y-2 border-t border-border p-3">
+        <UserFooter />
+        <div className="flex items-center justify-between px-1">
+          <p className="text-xs text-muted-foreground">v0.1.0</p>
+          <ThemeToggle />
+        </div>
       </div>
     </aside>
   );

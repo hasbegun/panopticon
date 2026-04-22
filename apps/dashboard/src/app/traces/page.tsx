@@ -11,9 +11,12 @@ import {
   Layers,
   Bot,
   RefreshCw,
+  Search,
+  Filter,
+  X,
 } from 'lucide-react';
 import { useProject } from '@/lib/store';
-import { fetchTraces, type TraceSummary } from '@/lib/api';
+import { fetchTraces, type TraceSummary, type TraceFilters } from '@/lib/api';
 import { ProjectSetupBanner } from '@/components/project-setup';
 
 const STATUS_STYLES: Record<string, string> = {
@@ -52,19 +55,36 @@ export default function TracesPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Filters
+  const [filters, setFilters] = useState<TraceFilters>({});
+  const [searchInput, setSearchInput] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const activeFilterCount = [filters.status, filters.agent_id, filters.search, filters.min_duration_ms].filter(Boolean).length;
+
   const load = useCallback(() => {
     if (!isConfigured) return;
     setLoading(true);
     setError(null);
-    fetchTraces(apiKey, projectId, PAGE_SIZE, offset)
+    fetchTraces(apiKey, projectId, PAGE_SIZE, offset, filters)
       .then((r) => setTraces(r.data))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [apiKey, projectId, isConfigured, offset]);
+  }, [apiKey, projectId, isConfigured, offset, filters]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  const applySearch = () => {
+    setOffset(0);
+    setFilters((f) => ({ ...f, search: searchInput || undefined }));
+  };
+
+  const clearFilters = () => {
+    setFilters({});
+    setSearchInput('');
+    setOffset(0);
+  };
 
   return (
     <div className="space-y-6">
@@ -88,6 +108,79 @@ export default function TracesPage() {
       </div>
 
       <ProjectSetupBanner />
+
+      {/* Search & Filter Bar */}
+      {isConfigured && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && applySearch()}
+                placeholder="Search by trace ID..."
+                className="w-full rounded-md border border-border bg-card py-2 pl-9 pr-3 text-sm outline-none placeholder:text-muted-foreground/50 focus:border-primary"
+              />
+            </div>
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm transition-colors ${
+                activeFilterCount > 0
+                  ? 'border-primary/50 bg-primary/10 text-primary'
+                  : 'border-border text-muted-foreground hover:bg-muted'
+              }`}
+            >
+              <Filter className="h-4 w-4" />
+              Filters{activeFilterCount > 0 && ` (${activeFilterCount})`}
+            </button>
+            {activeFilterCount > 0 && (
+              <button
+                onClick={clearFilters}
+                className="flex items-center gap-1 rounded-md border border-border px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
+              >
+                <X className="h-4 w-4" /> Clear
+              </button>
+            )}
+          </div>
+
+          {showFilters && (
+            <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card p-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Status</label>
+                <select
+                  value={filters.status ?? ''}
+                  onChange={(e) => { setOffset(0); setFilters((f) => ({ ...f, status: e.target.value || undefined })); }}
+                  className="rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none"
+                >
+                  <option value="">All</option>
+                  <option value="ok">OK</option>
+                  <option value="error">Error</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Agent</label>
+                <input
+                  value={filters.agent_id ?? ''}
+                  onChange={(e) => { setOffset(0); setFilters((f) => ({ ...f, agent_id: e.target.value || undefined })); }}
+                  placeholder="e.g. coder-agent"
+                  className="rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none placeholder:text-muted-foreground/50"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Min Duration (ms)</label>
+                <input
+                  type="number"
+                  value={filters.min_duration_ms ?? ''}
+                  onChange={(e) => { setOffset(0); setFilters((f) => ({ ...f, min_duration_ms: e.target.value ? Number(e.target.value) : undefined })); }}
+                  placeholder="e.g. 1000"
+                  className="w-32 rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none placeholder:text-muted-foreground/50"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {error && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">

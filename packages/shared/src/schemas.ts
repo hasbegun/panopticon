@@ -53,6 +53,8 @@ export const spanInputSchema = z.object({
   output: z.unknown().optional(),
   metadata: spanMetadataSchema.optional(),
   securityFlags: z.array(securityFlagSchema).optional(),
+  sessionId: z.string().optional(),
+  endUserId: z.string().optional(),
 });
 
 /** Zod schema for a batch of spans */

@@ -83,6 +83,7 @@ services:
       LLM_API_KEY: "${LLM_API_KEY:-}"
       LLM_MODEL: "${LLM_MODEL:-}"
       LLM_BASE_URL: "${LLM_BASE_URL:-}"
+      JWT_SECRET: "${JWT_SECRET:-panopticon-dev-secret-change-in-production}"
     depends_on:
       postgres:
         condition: service_healthy

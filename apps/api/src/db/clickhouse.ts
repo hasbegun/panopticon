@@ -48,7 +48,9 @@ export async function initClickHouse(): Promise<void> {
         input           String DEFAULT '',
         output          String DEFAULT '',
         metadata        String DEFAULT '{}',
-        security_flags  Array(String) DEFAULT []
+        security_flags  Array(String) DEFAULT [],
+        session_id      String DEFAULT '',
+        end_user_id     String DEFAULT ''
       )
       ENGINE = MergeTree()
       PARTITION BY toYYYYMM(start_time)
@@ -56,6 +58,16 @@ export async function initClickHouse(): Promise<void> {
       TTL toDateTime(start_time) + INTERVAL 30 DAY
     `,
   });
+
+  // Add session columns to existing tables (no-op if already present)
+  for (const col of [
+    { name: 'session_id', type: "String DEFAULT ''" },
+    { name: 'end_user_id', type: "String DEFAULT ''" },
+  ]) {
+    try {
+      await ch.command({ query: `ALTER TABLE panopticon.spans ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}` });
+    } catch { /* column may already exist */ }
+  }
 
   await ch.command({
     query: `

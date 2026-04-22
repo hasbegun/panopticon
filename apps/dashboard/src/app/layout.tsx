@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
-import { Sidebar } from '@/components/sidebar';
+import { AuthProvider } from '@/lib/auth';
 import { ProjectProvider } from '@/lib/store';
+import { AppShell } from '@/components/app-shell';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -15,12 +16,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className="dark">
       <body className={`${inter.className} antialiased`}>
-        <ProjectProvider>
-          <div className="flex h-screen">
-            <Sidebar />
-            <main className="flex-1 overflow-y-auto p-6">{children}</main>
-          </div>
-        </ProjectProvider>
+        <AuthProvider>
+          <ProjectProvider>
+            <AppShell>{children}</AppShell>
+          </ProjectProvider>
+        </AuthProvider>
       </body>
     </html>
   );

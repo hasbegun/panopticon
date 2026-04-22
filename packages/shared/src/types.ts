@@ -40,6 +40,8 @@ export interface Span {
   output: unknown;
   metadata: SpanMetadata;
   securityFlags: SecurityFlag[];
+  sessionId?: string;
+  endUserId?: string;
 }
 
 /** Metadata attached to a span */
@@ -68,6 +70,8 @@ export interface Trace {
   status: SpanStatus;
   spanCount: number;
   metadata: Record<string, unknown>;
+  sessionId?: string;
+  endUserId?: string;
 }
 
 /** Batch of spans sent from SDK to ingestion API */
@@ -92,6 +96,8 @@ export interface SpanInput {
   output?: unknown;
   metadata?: Partial<SpanMetadata>;
   securityFlags?: SecurityFlag[];
+  sessionId?: string;
+  endUserId?: string;
 }
 
 /** Project configuration */

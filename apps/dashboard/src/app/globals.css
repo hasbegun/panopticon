@@ -49,3 +49,68 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Ask AI — markdown rendering */
+@layer components {
+  .prose-ai p {
+    @apply mb-2 last:mb-0 leading-relaxed;
+  }
+  .prose-ai strong {
+    @apply font-semibold text-foreground;
+  }
+  .prose-ai em {
+    @apply italic;
+  }
+  .prose-ai ul {
+    @apply mb-2 ml-4 list-disc space-y-1;
+  }
+  .prose-ai ol {
+    @apply mb-2 ml-4 list-decimal space-y-1;
+  }
+  .prose-ai li {
+    @apply leading-relaxed;
+  }
+  .prose-ai code {
+    @apply rounded bg-muted px-1.5 py-0.5 text-xs font-mono text-foreground;
+  }
+  .prose-ai pre {
+    @apply my-2 overflow-auto rounded-md bg-muted/50 p-3;
+  }
+  .prose-ai pre code {
+    @apply bg-transparent p-0 text-xs;
+  }
+  .prose-ai h1, .prose-ai h2, .prose-ai h3, .prose-ai h4 {
+    @apply mt-3 mb-1 font-semibold text-foreground;
+  }
+  .prose-ai h1 { @apply text-base; }
+  .prose-ai h2 { @apply text-sm; }
+  .prose-ai h3, .prose-ai h4 { @apply text-sm; }
+  .prose-ai blockquote {
+    @apply my-2 border-l-2 border-muted-foreground/30 pl-3 italic text-muted-foreground;
+  }
+  .prose-ai a {
+    @apply text-primary underline underline-offset-2 hover:text-primary/80;
+  }
+  .prose-ai table {
+    @apply my-2 w-full text-xs;
+  }
+  .prose-ai th {
+    @apply border border-border bg-muted/50 px-2 py-1 text-left font-medium;
+  }
+  .prose-ai td {
+    @apply border border-border px-2 py-1;
+  }
+  .prose-ai hr {
+    @apply my-3 border-border;
+  }
+
+  .prose-sm-red p {
+    @apply mb-1 last:mb-0;
+  }
+  .prose-sm-red strong {
+    @apply font-semibold;
+  }
+  .prose-sm-red code {
+    @apply rounded bg-red-500/10 px-1 py-0.5 text-xs font-mono;
+  }
+}

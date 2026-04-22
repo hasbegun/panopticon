@@ -55,7 +55,10 @@ const OLLAMA_DEFAULT_URL = 'http://host.docker.internal:11434/v1';
 
 let _envConfig: LLMConfig | null = null;
 
-/** Read config from environment variables (server-level defaults) */
+/** Read config from environme
+
+
+nt variables (server-level defaults) */
 export function getEnvLLMConfig(): LLMConfig {
   if (!_envConfig) {
     const raw = (process.env.LLM_PROVIDER ?? '').trim();

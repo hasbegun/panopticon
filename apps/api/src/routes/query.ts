@@ -6,6 +6,33 @@ import { analyzeTrace, type SpanForAnalysis } from '../llm/analysis.js';
 
 export const queryRoutes = new Hono();
 
+// ── Rate limiter (per-project, sliding window) ──────────────────────────────
+const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
+const RATE_LIMIT_MAX = 10;           // max queries per window
+const queryLog = new Map<string, number[]>();
+
+function checkRateLimit(projectId: string): boolean {
+  const now = Date.now();
+  const times = queryLog.get(projectId) ?? [];
+  const recent = times.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+  if (recent.length >= RATE_LIMIT_MAX) {
+    queryLog.set(projectId, recent);
+    return false;
+  }
+  recent.push(now);
+  queryLog.set(projectId, recent);
+  return true;
+}
+// Clean up stale entries every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of queryLog) {
+    const recent = v.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+    if (recent.length === 0) queryLog.delete(k);
+    else queryLog.set(k, recent);
+  }
+}, 300_000);
+
 // ── Natural Language Query ──────────────────────────────────────────────────
 
 /** POST /v1/query — Translate natural language to SQL and execute */
@@ -17,6 +44,14 @@ queryRoutes.post('/', async (c) => {
     return c.json(
       { error: 'bad_request', message: 'question and project_id are required', statusCode: 400 },
       400,
+    );
+  }
+
+  // Rate limit
+  if (!checkRateLimit(project_id)) {
+    return c.json(
+      { error: 'rate_limited', message: `Too many queries. Please wait before asking again (max ${RATE_LIMIT_MAX} per minute).`, statusCode: 429 },
+      429,
     );
   }
 

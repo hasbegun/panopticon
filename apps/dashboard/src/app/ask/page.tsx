@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Sparkles, Send, Loader2, Code, Table, AlertCircle } from 'lucide-react';
+import { Sparkles, Send, Loader2, Code, Table, AlertCircle, ShieldCheck } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useProject } from '@/lib/store';
 import { askQuery, type NLQueryResult } from '@/lib/api';
 import { ProjectSetupBanner } from '@/components/project-setup';
@@ -69,6 +71,10 @@ export default function AskAIPage() {
           Ask questions about your traces, agents, and MCP servers in natural language.
           Panopticon translates your question into SQL, executes it, and returns the results.
         </p>
+        <div className="flex items-center gap-1.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 text-xs text-emerald-400 w-fit">
+          <ShieldCheck className="h-3.5 w-3.5" />
+          Guardrails active — queries are sandboxed to read-only access on your project data only
+        </div>
         <ProjectSetupBanner />
       </div>
 
@@ -120,12 +126,17 @@ export default function AskAIPage() {
                         <Loader2 className="h-4 w-4 animate-spin" /> Translating and executing...
                       </div>
                     ) : entry.error ? (
-                      <div className="flex items-center gap-2 text-sm text-red-400">
-                        <AlertCircle className="h-4 w-4" /> {entry.error}
+                      <div className="flex items-start gap-2 text-sm text-red-400">
+                        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                        <div className="prose-sm-red">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{entry.error}</ReactMarkdown>
+                        </div>
                       </div>
                     ) : entry.result ? (
                       <>
-                        <p className="text-sm">{entry.result.description}</p>
+                        <div className="prose-ai text-sm">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{entry.result.description}</ReactMarkdown>
+                        </div>
                         {/* SQL */}
                         <details className="group">
                           <summary className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
@@ -195,11 +206,17 @@ export default function AskAIPage() {
           <Sparkles className="ml-2 h-4 w-4 text-violet-400" />
           <input
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => setInput(e.target.value.slice(0, 500))}
             placeholder="Ask about your traces, agents, or MCP servers..."
             disabled={!isConfigured || loading}
+            maxLength={500}
             className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
           />
+          {input.length > 0 && (
+            <span className={`text-[10px] tabular-nums shrink-0 ${input.length > 450 ? 'text-amber-400' : 'text-muted-foreground/50'}`}>
+              {input.length}/500
+            </span>
+          )}
           <button
             type="submit"
             disabled={!input.trim() || !isConfigured || loading}

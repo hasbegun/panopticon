@@ -71,10 +71,22 @@ export interface Metrics {
   unique_agents: string;
 }
 
-export function fetchTraces(apiKey: string, projectId: string, limit = 50, offset = 0) {
+export interface TraceFilters {
+  status?: string;
+  agent_id?: string;
+  search?: string;
+  min_duration_ms?: number;
+}
+
+export function fetchTraces(apiKey: string, projectId: string, limit = 50, offset = 0, filters?: TraceFilters) {
+  const params: Record<string, string | number> = { project_id: projectId, limit, offset };
+  if (filters?.status) params.status = filters.status;
+  if (filters?.agent_id) params.agent_id = filters.agent_id;
+  if (filters?.search) params.search = filters.search;
+  if (filters?.min_duration_ms) params.min_duration_ms = filters.min_duration_ms;
   return apiFetch<{ data: TraceSummary[]; meta: { limit: number; offset: number } }>(
     '/v1/traces',
-    { apiKey, params: { project_id: projectId, limit, offset } },
+    { apiKey, params },
   );
 }
 
@@ -386,4 +398,202 @@ export async function askQuery(apiKey: string, projectId: string, question: stri
     throw new Error(body?.message ?? `API error ${res.status}`);
   }
   return res.json() as Promise<{ data: NLQueryResult }>;
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+  avatar_url?: string;
+  created_at: string;
+}
+
+export interface Membership {
+  project_id: string;
+  project_name: string;
+  role: string;
+}
+
+export async function authRegister(email: string, password: string, name?: string) {
+  const res = await fetch(`${BASE}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, name }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.message ?? `Registration failed (${res.status})`);
+  }
+  return res.json() as Promise<{ data: { user: AuthUser; token: string } }>;
+}
+
+export async function authLogin(email: string, password: string) {
+  const res = await fetch(`${BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.message ?? `Login failed (${res.status})`);
+  }
+  return res.json() as Promise<{ data: { user: AuthUser; token: string } }>;
+}
+
+export async function authMe(token: string) {
+  const res = await fetch(`${BASE}/auth/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Session expired');
+  return res.json() as Promise<{ data: { user: AuthUser; memberships: Membership[] } }>;
+}
+
+// ── Team Members ──────────────────────────────────────────────────────────────
+
+export interface ProjectMember {
+  user_id: string;
+  email: string;
+  name: string;
+  avatar_url?: string;
+  role: string;
+  created_at: string;
+}
+
+export async function fetchMembers(apiKey: string, projectId: string) {
+  return apiFetch<{ data: ProjectMember[] }>(
+    `/v1/projects/${projectId}/members`,
+    { apiKey },
+  );
+}
+
+export async function addMember(apiKey: string, projectId: string, email: string, role: string) {
+  const url = new URL(`${BASE}/v1/projects/${projectId}/members`, window.location.origin);
+  const res = await fetch(url.toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+    body: JSON.stringify({ email, role }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.message ?? `Failed to add member (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function updateMemberRole(apiKey: string, projectId: string, userId: string, role: string) {
+  const url = new URL(`${BASE}/v1/projects/${projectId}/members/${userId}`, window.location.origin);
+  const res = await fetch(url.toString(), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+    body: JSON.stringify({ role }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.message ?? `Failed to update role (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function removeMember(apiKey: string, projectId: string, userId: string) {
+  const url = new URL(`${BASE}/v1/projects/${projectId}/members/${userId}`, window.location.origin);
+  const res = await fetch(url.toString(), {
+    method: 'DELETE',
+    headers: { 'x-api-key': apiKey },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.message ?? `Failed to remove member (${res.status})`);
+  }
+  return res.json();
+}
+
+// ── Storage / Retention ───────────────────────────────────────────────────────
+
+export interface StorageStats {
+  total_spans: string;
+  total_traces: string;
+  oldest_span: string;
+  newest_span: string;
+  estimated_size: string;
+}
+
+export async function fetchStorageStats(apiKey: string, projectId: string) {
+  return apiFetch<{ data: StorageStats }>(
+    `/v1/projects/${projectId}/storage`,
+    { apiKey },
+  );
+}
+
+export async function updateRetention(apiKey: string, projectId: string, retentionDays: number) {
+  const url = new URL(`${BASE}/v1/projects/${projectId}/retention`, window.location.origin);
+  const res = await fetch(url.toString(), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+    body: JSON.stringify({ retentionDays }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.message ?? `Failed to update retention (${res.status})`);
+  }
+  return res.json() as Promise<{ data: { retentionDays: number; globalTTL: number } }>;
+}
+
+// ── Sessions ──────────────────────────────────────────────────────────────────
+
+export interface SessionSummary {
+  session_id: string;
+  end_user_id: string;
+  session_start: string;
+  session_end: string;
+  duration_ms: number;
+  trace_count: number;
+  span_count: number;
+  error_count: number;
+  agent_count: number;
+}
+
+export interface SessionTrace {
+  trace_id: string;
+  agent_id: string;
+  trace_start: string;
+  trace_end: string;
+  duration_ms: number;
+  status: string;
+  span_count: number;
+}
+
+export interface EndUser {
+  end_user_id: string;
+  session_count: number;
+  trace_count: number;
+  first_seen: string;
+  last_seen: string;
+  error_count: number;
+}
+
+export async function fetchSessions(apiKey: string, projectId: string, opts?: { limit?: number; offset?: number; endUserId?: string }) {
+  const params: Record<string, string | number> = { project_id: projectId };
+  if (opts?.limit) params.limit = opts.limit;
+  if (opts?.offset) params.offset = opts.offset;
+  if (opts?.endUserId) params.end_user_id = opts.endUserId;
+  return apiFetch<{ data: SessionSummary[]; meta: { limit: number; offset: number } }>(
+    '/v1/sessions',
+    { apiKey, params },
+  );
+}
+
+export async function fetchSessionDetail(apiKey: string, projectId: string, sessionId: string) {
+  return apiFetch<{ data: { session: SessionSummary; traces: SessionTrace[] } }>(
+    `/v1/sessions/${sessionId}`,
+    { apiKey, params: { project_id: projectId } },
+  );
+}
+
+export async function fetchEndUsers(apiKey: string, projectId: string) {
+  return apiFetch<{ data: EndUser[] }>(
+    '/v1/sessions/users/list',
+    { apiKey, params: { project_id: projectId } },
+  );
 }

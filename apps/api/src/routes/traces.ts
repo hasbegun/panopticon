@@ -4,6 +4,20 @@ import { spanBatchSchema } from '@panopticon/shared';
 import { Queue } from 'bullmq';
 import { getClickHouse } from '../db/clickhouse.js';
 import { getRedis } from '../db/redis.js';
+import { getPostgres } from '../db/postgres.js';
+
+/** Look up a project's configured retention (default 30 days) */
+async function getRetentionDays(projectId: string): Promise<number> {
+  try {
+    const sql = getPostgres();
+    const [row] = await sql`SELECT settings FROM projects WHERE id = ${projectId}`;
+    if (row) {
+      const s = typeof row.settings === 'string' ? JSON.parse(row.settings) : row.settings;
+      if (s?.retentionDays && Number.isFinite(s.retentionDays)) return s.retentionDays;
+    }
+  } catch { /* fall through */ }
+  return 30;
+}
 
 let enrichmentQueue: Queue | null = null;
 let securityQueue: Queue | null = null;
@@ -45,6 +59,8 @@ traceRoutes.post('/', zValidator('json', spanBatchSchema), async (c) => {
     output: JSON.stringify(span.output ?? null),
     metadata: JSON.stringify(span.metadata ?? {}),
     security_flags: span.securityFlags ?? [],
+    session_id: span.sessionId ?? '',
+    end_user_id: span.endUserId ?? '',
   }));
 
   await ch.insert({
@@ -85,6 +101,10 @@ traceRoutes.get('/', async (c) => {
   const projectId = c.req.query('project_id');
   const limit = Math.min(Number(c.req.query('limit') ?? 50), 200);
   const offset = Number(c.req.query('offset') ?? 0);
+  const statusFilter = c.req.query('status');
+  const agentFilter = c.req.query('agent_id');
+  const search = c.req.query('search');
+  const minDurationMs = c.req.query('min_duration_ms');
 
   if (!projectId) {
     return c.json(
@@ -92,6 +112,22 @@ traceRoutes.get('/', async (c) => {
       400,
     );
   }
+
+  // Build HAVING clauses for post-aggregation filters
+  const havingClauses: string[] = [];
+  if (statusFilter === 'error') havingClauses.push("status = 'error'");
+  else if (statusFilter === 'ok') havingClauses.push("status = 'ok'");
+  if (minDurationMs) havingClauses.push(`duration_ms >= {minDurationMs: UInt32}`);
+
+  const retentionDays = await getRetentionDays(projectId);
+
+  // Build WHERE clauses for pre-aggregation filters
+  const whereClauses = ['project_id = {projectId: String}', 'start_time >= now() - INTERVAL {retentionDays: UInt32} DAY'];
+  if (agentFilter) whereClauses.push('agent_id = {agentFilter: String}');
+  if (search) whereClauses.push('trace_id LIKE {search: String}');
+
+  const havingSql = havingClauses.length > 0 ? `HAVING ${havingClauses.join(' AND ')}` : '';
+  const whereSql = whereClauses.join(' AND ');
 
   const result = await ch.query({
     query: `
@@ -105,13 +141,19 @@ traceRoutes.get('/', async (c) => {
         if(countIf(status = 'error') > 0, 'error', 'ok') AS status,
         count() AS span_count
       FROM panopticon.spans
-      WHERE project_id = {projectId: String}
+      WHERE ${whereSql}
       GROUP BY trace_id, project_id
+      ${havingSql}
       ORDER BY trace_start DESC
       LIMIT {limit: UInt32}
       OFFSET {offset: UInt32}
     `,
-    query_params: { projectId, limit, offset },
+    query_params: {
+      projectId, limit, offset, retentionDays,
+      ...(agentFilter ? { agentFilter } : {}),
+      ...(search ? { search: `%${search}%` } : {}),
+      ...(minDurationMs ? { minDurationMs: Number(minDurationMs) } : {}),
+    },
     format: 'JSONEachRow',
   });
 

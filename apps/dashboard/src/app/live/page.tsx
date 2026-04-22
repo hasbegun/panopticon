@@ -271,42 +271,87 @@ export default function LivePage() {
               </ResponsiveContainer>
             </div>
 
-            {/* Cost table */}
+            {/* Cost & Budget panel */}
             <div className="rounded-lg border border-border bg-card p-4">
               <div className="mb-3 flex items-center gap-2 text-sm font-medium">
                 <DollarSign className="h-4 w-4 text-emerald-400" />
-                Token Usage (last 24h)
+                Cost & Token Usage
               </div>
               {costs.length === 0 ? (
                 <p className="py-8 text-center text-sm text-muted-foreground">
                   No LLM call data with token metadata yet.
                 </p>
               ) : (
-                <div className="max-h-[200px] overflow-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-border text-left text-muted-foreground">
-                        <th className="pb-2 pr-3">Agent</th>
-                        <th className="pb-2 pr-3">Model</th>
-                        <th className="pb-2 pr-3 text-right">Calls</th>
-                        <th className="pb-2 pr-3 text-right">Tokens</th>
-                        <th className="pb-2 text-right">Cost</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {costs.map((row, i) => (
-                        <tr key={i}>
-                          <td className="py-1.5 pr-3 font-mono">{row.agent_id}</td>
-                          <td className="py-1.5 pr-3">{row.model || '—'}</td>
-                          <td className="py-1.5 pr-3 text-right">{row.call_count}</td>
-                          <td className="py-1.5 pr-3 text-right">{formatNumber(row.total_tokens)}</td>
-                          <td className="py-1.5 text-right">
-                            {row.total_cost > 0 ? `$${row.total_cost.toFixed(4)}` : '—'}
-                          </td>
+                <div className="space-y-4">
+                  {/* Summary cards */}
+                  {(() => {
+                    const totalCost = costs.reduce((s, r) => s + r.total_cost, 0);
+                    const totalTokens = costs.reduce((s, r) => s + Number(r.total_tokens), 0);
+                    const totalCalls = costs.reduce((s, r) => s + Number(r.call_count), 0);
+                    return (
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        <div className="rounded-md border border-border bg-background p-2">
+                          <p className="text-[10px] uppercase text-muted-foreground">24h Spend</p>
+                          <p className="text-lg font-bold text-emerald-400">{totalCost > 0 ? `$${totalCost.toFixed(4)}` : '$0'}</p>
+                        </div>
+                        <div className="rounded-md border border-border bg-background p-2">
+                          <p className="text-[10px] uppercase text-muted-foreground">Tokens</p>
+                          <p className="text-lg font-bold">{formatNumber(totalTokens)}</p>
+                        </div>
+                        <div className="rounded-md border border-border bg-background p-2">
+                          <p className="text-[10px] uppercase text-muted-foreground">Projected / mo</p>
+                          <p className="text-lg font-bold text-amber-400">{totalCost > 0 ? `$${(totalCost * 30).toFixed(2)}` : '—'}</p>
+                        </div>
+                        <div className="rounded-md border border-border bg-background p-2">
+                          <p className="text-[10px] uppercase text-muted-foreground">LLM Calls</p>
+                          <p className="text-lg font-bold">{formatNumber(totalCalls)}</p>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Per-agent breakdown */}
+                  <div className="max-h-[160px] overflow-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-border text-left text-muted-foreground">
+                          <th className="pb-2 pr-3">Agent</th>
+                          <th className="pb-2 pr-3">Model</th>
+                          <th className="pb-2 pr-3 text-right">Calls</th>
+                          <th className="pb-2 pr-3 text-right">Tokens</th>
+                          <th className="pb-2 pr-3 text-right">Cost</th>
+                          <th className="pb-2 text-right">Share</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {(() => {
+                          const totalCost = costs.reduce((s, r) => s + r.total_cost, 0);
+                          return costs.map((row, i) => {
+                            const pct = totalCost > 0 ? ((row.total_cost / totalCost) * 100).toFixed(0) : '0';
+                            return (
+                              <tr key={i}>
+                                <td className="py-1.5 pr-3 font-mono">{row.agent_id}</td>
+                                <td className="py-1.5 pr-3">{row.model || '—'}</td>
+                                <td className="py-1.5 pr-3 text-right">{row.call_count}</td>
+                                <td className="py-1.5 pr-3 text-right">{formatNumber(row.total_tokens)}</td>
+                                <td className="py-1.5 pr-3 text-right">
+                                  {row.total_cost > 0 ? `$${row.total_cost.toFixed(4)}` : '—'}
+                                </td>
+                                <td className="py-1.5 text-right">
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <div className="h-1.5 w-12 overflow-hidden rounded-full bg-muted">
+                                      <div className="h-full rounded-full bg-emerald-400" style={{ width: `${pct}%` }} />
+                                    </div>
+                                    <span className="w-8 text-right text-muted-foreground">{pct}%</span>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          });
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
             </div>

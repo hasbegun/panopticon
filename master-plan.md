@@ -881,3 +881,116 @@ apps/dashboard/src/lib/api.ts    — fetchProjectSettings(), updateProjectSettin
 apps/dashboard/src/app/settings/  — Full LLM config form
 docker-compose.yml               — extra_hosts on api + worker
 ```
+
+---
+
+## Phase 7 — Missing Features Report
+
+Gap analysis of the current platform, grouped by impact.
+
+### High Impact — Differentiation
+
+- **Human Feedback / Annotations** — No way to attach thumbs-up/down or labels to traces. Table stakes for LLM observability. Enables quality scoring, RLHF data collection, and filtering by human judgment.
+- **Evaluations (Evals)** — No automated quality scoring on agent outputs (correctness, hallucination detection, tool-use accuracy). Pairs naturally with the existing LLM integration layer.
+- **Prompt Registry & Versioning** — No prompt management. Can't version, diff, or A/B test system prompts. Link traces to prompt versions to detect quality regressions.
+
+### Medium Impact — Platform Maturity
+
+- **Session / User Tracking** — ~~No end-user session concept grouping multiple traces.~~ **DONE**: Added `session_id` + `end_user_id` columns to ClickHouse spans, updated shared types/schemas, span ingestion passes through session fields, new `/v1/sessions` API (list, detail, users/list), Sessions dashboard page with search/filter and session detail view with trace timeline. Sidebar nav item added.
+- **Data Retention / TTL Policies** — ~~ClickHouse grows unbounded. No configurable retention, archival, or downsampling.~~ **DONE**: Per-project retentionDays (1-365) via Settings UI slider. Saves to Postgres and updates ClickHouse table-level TTL (max across projects). Per-project query-time filtering on trace list. Storage stats card (size, spans, traces, oldest span).
+- **RBAC / Multi-Team** — ~~Single API key per project, no role-based access, no org/team model.~~ **DONE**: Full RBAC system with user registration/login (JWT), dual-mode auth (API key + Bearer token), 4-tier roles (owner/admin/member/viewer), team management UI in settings. Backward compatible — existing API-key-only setups still work.
+- **Export & Integrations** — No OTLP export, no Grafana datasource, no PagerDuty/Opsgenie for alerts.
+
+### Quick Wins — Polish
+
+- **Saved Filters / Search** — ~~Trace list needs saved views, full-text search across span content, and bookmarks.~~ **DONE**: Traces page now has a search bar (trace ID), expandable filter panel (status, agent, min duration). API supports `status`, `agent_id`, `search`, `min_duration_ms` query params.
+- **Agent Performance Trends** — ~~Dashboard shows point-in-time metrics but no time-series trends.~~ **DONE**: Dashboard home now shows 7-day trend charts (throughput, error rate, latency) using 6-hour buckets via the existing timeseries API.
+- **Cost Budgets & Projections** — ~~Live page shows token costs but no budget alerts, per-agent cost breakdown, or spend projection.~~ **DONE**: Live page cost panel now includes summary cards (24h spend, tokens, projected monthly, LLM calls), per-agent breakdown with percentage share bars.
+
+#### Files Changed (Quick Wins)
+
+```
+apps/api/src/routes/traces.ts         — Added server-side filtering (status, agent_id, search, min_duration_ms)
+apps/dashboard/src/lib/api.ts         — TraceFilters interface, updated fetchTraces()
+apps/dashboard/src/app/traces/page.tsx — Search bar + collapsible filter panel UI
+apps/dashboard/src/app/page.tsx        — 7-day trend charts (Recharts AreaChart + LineChart)
+apps/dashboard/src/app/live/page.tsx   — Cost summary cards + per-agent share breakdown
+```
+
+#### Files Changed (RBAC / Multi-Team)
+
+```
+apps/api/src/db/postgres.ts              — Added users + project_members tables
+apps/api/src/routes/auth.ts              — NEW: /auth/register, /auth/login, /auth/me (JWT)
+apps/api/src/middleware/auth.ts           — Dual-mode: x-api-key OR Authorization: Bearer JWT
+apps/api/src/middleware/rbac.ts           — NEW: requireRole() guard (owner > admin > member > viewer)
+apps/api/src/routes/projects.ts          — Team CRUD: GET/POST/PUT/DELETE /:id/members, auto-owner on create
+apps/api/src/index.ts                    — Registered /auth routes (public)
+apps/dashboard/src/lib/auth.tsx          — NEW: AuthProvider context (JWT session, login/register/logout)
+apps/dashboard/src/lib/api.ts            — Added auth + member management API helpers
+apps/dashboard/src/components/app-shell.tsx — NEW: Auth gate (JWT OR legacy API-key access)
+apps/dashboard/src/app/login/page.tsx    — NEW: Login/register page with mode toggle
+apps/dashboard/src/components/sidebar.tsx — User footer with avatar + logout button
+apps/dashboard/src/app/settings/page.tsx — Team management card (list, add, role change, remove)
+apps/dashboard/src/app/layout.tsx        — Wrapped with AuthProvider + AppShell
+docker-compose.yml                       — Added JWT_SECRET env var
+.env.example                             — Documented JWT_SECRET
+```
+
+#### Files Changed (Data Retention / TTL Policies)
+
+```
+apps/api/src/routes/projects.ts          — Added GET /:id/storage (stats) + PUT /:id/retention (TTL update)
+apps/api/src/routes/traces.ts            — getRetentionDays() helper, query-time retention filter on trace list
+apps/dashboard/src/lib/api.ts            — Added fetchStorageStats(), updateRetention(), StorageStats type
+apps/dashboard/src/app/settings/page.tsx — Data Retention & Storage card (stats grid, slider, save)
+```
+
+#### Files Changed (Session / User Tracking)
+
+```
+apps/api/src/db/clickhouse.ts              — Added session_id + end_user_id columns (CREATE + ALTER)
+packages/shared/src/types.ts               — Added sessionId, endUserId to Span, SpanInput, Trace
+packages/shared/src/schemas.ts             — Added sessionId, endUserId to spanInputSchema
+apps/api/src/routes/traces.ts              — Pass session_id, end_user_id through on ingestion
+apps/api/src/routes/sessions.ts            — NEW: GET / (list), GET /:sessionId (detail), GET /users/list
+apps/api/src/index.ts                      — Registered /v1/sessions route + auto-init schema on startup
+apps/dashboard/src/lib/api.ts              — Added session API helpers + types
+apps/dashboard/src/app/sessions/page.tsx   — NEW: Sessions list + detail page
+apps/dashboard/src/components/sidebar.tsx  — Added Sessions nav item
+```
+
+#### Ask AI Guardrails
+
+Strong 3-layer guardrail system added to the Ask AI (natural language → SQL) feature:
+
+**Layer 1 — Input Guardrails (pre-LLM)**
+- 500 character limit (client + server)
+- 25+ prompt injection patterns (jailbreak, DAN, "ignore instructions", "reveal system prompt", template injection `${}` / `{{}}`, code execution)
+- Off-topic rejection (poems, jokes, hacking, password generation)
+- Encoded payload detection (base64 blobs, long hex strings)
+
+**Layer 2 — Output Guardrails (post-LLM SQL validation)**
+- Table whitelist: only `panopticon.spans`, `panopticon.audit_log`, `panopticon.trace_analysis`
+- Function whitelist: ~100 known-safe ClickHouse functions; unknown functions blocked
+- 16 forbidden DDL/DML keywords (DROP, DELETE, ALTER, INSERT, UPDATE, CREATE, TRUNCATE, GRANT, REVOKE, ATTACH, DETACH, RENAME, OPTIMIZE, KILL, SYSTEM, SET)
+- Dangerous pattern blocking: INTO OUTFILE, file(), url(), s3(), remote(), cluster(), system.*, information_schema.*, SQL comments, hex strings, char(), UNION injection with non-panopticon tables
+- Mandatory project_id filter (prevents cross-project data access)
+- Row limit: max 1000, default 100 auto-appended
+- Subquery depth limit: max 3 nested SELECTs
+
+**Layer 3 — Rate Limiting**
+- 10 queries per minute per project (sliding window, in-memory)
+- Returns HTTP 429 with clear message
+
+**UI**
+- "Guardrails active" badge with ShieldCheck icon
+- Character counter (turns amber at 450/500)
+
+#### Files Changed (Ask AI Guardrails)
+
+```
+apps/api/src/llm/query.ts              — Complete rewrite: 3-layer guardrails (input validation, SQL whitelist, limit enforcement)
+apps/api/src/routes/query.ts           — Added per-project rate limiter (10/min sliding window)
+apps/dashboard/src/app/ask/page.tsx    — Guardrails badge, character counter, maxLength enforcement
+```
