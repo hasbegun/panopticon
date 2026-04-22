@@ -61,6 +61,12 @@ function ForceGraph({ nodes, links }: { nodes: TopoNode[]; links: TopoLink[] }) 
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [dimensions, setDimensions] = useState({ w: 800, h: 500 });
 
+  // Pan & zoom state
+  const [transform, setTransform] = useState({ x: 0, y: 0, k: 1 });
+  const panRef = useRef<{ active: boolean; startX: number; startY: number; origX: number; origY: number }>({
+    active: false, startX: 0, startY: 0, origX: 0, origY: 0,
+  });
+
   // Measure container
   useEffect(() => {
     const el = svgRef.current?.parentElement;
@@ -109,14 +115,61 @@ function ForceGraph({ nodes, links }: { nodes: TopoNode[]; links: TopoLink[] }) 
 
   const nodeRadius = (n: SimNode) => Math.max(14, Math.min(28, 10 + Math.sqrt(n.callCount) * 2));
 
+  // Pan handlers
+  const onPointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    const svg = svgRef.current;
+    if (!svg) return;
+    svg.setPointerCapture(e.pointerId);
+    panRef.current = { active: true, startX: e.clientX, startY: e.clientY, origX: transform.x, origY: transform.y };
+  }, [transform.x, transform.y]);
+
+  const onPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!panRef.current.active) return;
+    const dx = e.clientX - panRef.current.startX;
+    const dy = e.clientY - panRef.current.startY;
+    setTransform((t) => ({ ...t, x: panRef.current.origX + dx, y: panRef.current.origY + dy }));
+  }, []);
+
+  const onPointerUp = useCallback(() => {
+    panRef.current.active = false;
+  }, []);
+
+  // Zoom handler
+  const onWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const factor = e.deltaY < 0 ? 1.1 : 0.9;
+    setTransform((t) => {
+      const newK = Math.min(4, Math.max(0.1, t.k * factor));
+      const ratio = newK / t.k;
+      return { k: newK, x: mx - ratio * (mx - t.x), y: my - ratio * (my - t.y) };
+    });
+  }, []);
+
   return (
-    <svg ref={svgRef} width="100%" height={dimensions.h} className="select-none">
+    <svg
+      ref={svgRef}
+      width="100%"
+      height={dimensions.h}
+      className="select-none cursor-grab active:cursor-grabbing"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      onWheel={onWheel}
+    >
       <defs>
         <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
           <polygon points="0 0, 8 3, 0 6" fill="hsl(var(--muted-foreground))" opacity={0.4} />
         </marker>
       </defs>
 
+      <g transform={`translate(${transform.x},${transform.y}) scale(${transform.k})`}>
       {/* Links */}
       {simLinks.map((l, i) => {
         const s = l.source as SimNode;
@@ -198,6 +251,7 @@ function ForceGraph({ nodes, links }: { nodes: TopoNode[]; links: TopoLink[] }) 
           </g>
         );
       })}
+      </g>
     </svg>
   );
 }
