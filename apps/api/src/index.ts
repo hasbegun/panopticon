@@ -11,7 +11,6 @@ import { topologyRoutes } from './routes/topology.js';
 import { securityRoutes } from './routes/security.js';
 import { alertRoutes } from './routes/alerts.js';
 import { queryRoutes } from './routes/query.js';
-import { authRoutes } from './routes/auth.js';
 import { sessionRoutes } from './routes/sessions.js';
 import { authMiddleware } from './middleware/auth.js';
 import { initPostgres } from './db/postgres.js';
@@ -37,7 +36,36 @@ app.use('*', secureHeaders());
 
 // Public routes (no auth)
 app.route('/health', healthRoutes);
-app.route('/auth', authRoutes);
+// Proxy /auth/* to the standalone auth service
+const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://localhost:4401';
+app.all('/auth/*', async (c) => {
+  const path = c.req.path;
+  const url = `${AUTH_SERVICE_URL}${path}`;
+  const headers = new Headers();
+  // Forward relevant headers
+  for (const [k, v] of Object.entries({
+    'content-type': c.req.header('content-type'),
+    'authorization': c.req.header('authorization'),
+    'x-forwarded-for': c.req.header('x-forwarded-for') || c.req.header('x-real-ip') || 'unknown',
+  })) {
+    if (v) headers.set(k, v);
+  }
+  try {
+    const upstream = await fetch(url, {
+      method: c.req.method,
+      headers,
+      body: ['GET', 'HEAD'].includes(c.req.method) ? undefined : await c.req.arrayBuffer(),
+    });
+    const body = await upstream.text();
+    return new Response(body, {
+      status: upstream.status,
+      headers: { 'Content-Type': upstream.headers.get('Content-Type') || 'application/json' },
+    });
+  } catch (err) {
+    console.error('Auth proxy error:', err);
+    return c.json({ error: 'service_unavailable', message: 'Auth service is unavailable', statusCode: 503 }, 503);
+  }
+});
 
 // API v1 routes (auth required)
 const v1 = new Hono();

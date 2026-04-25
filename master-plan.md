@@ -994,3 +994,49 @@ apps/api/src/llm/query.ts              — Complete rewrite: 3-layer guardrails 
 apps/api/src/routes/query.ts           — Added per-project rate limiter (10/min sliding window)
 apps/dashboard/src/app/ask/page.tsx    — Guardrails badge, character counter, maxLength enforcement
 ```
+
+#### Auth Service Split
+
+Split authentication into a standalone microservice (`apps/auth/`) running in its own container on port 4401.
+The API service delegates all credential validation to the auth service via internal HTTP calls, keeping the API stateless w.r.t. auth.
+
+**Architecture**
+- **Auth service** (`:4401`) — owns user registration, login, JWT signing/verification, API key validation
+- **API service** (`:4400`) — proxies `/auth/*` to auth service; middleware calls `/auth/validate` and `/auth/validate-key` internally
+- Dashboard calls the API's `/auth/*` proxy transparently — no client-side changes needed
+- Service-to-service auth via `INTERNAL_AUTH_KEY` header (prevents external access to validate endpoints)
+
+**Auth service features**
+- Per-IP rate limiting: 10 login/register attempts per minute
+- High-throughput internal validation: 200 req/sec per caller
+- Bcrypt cost factor 12 (increased from 10)
+- Constant-time password check on login (timing attack protection)
+- Strict input validation: email format, password length 8–128 chars, name max 100 chars
+- Own health check endpoint (`/health`)
+- Own Dockerfile with multi-stage build (base → deps → builder → runner)
+
+**API middleware changes**
+- Removed direct Postgres queries for auth — now calls auth service
+- 30-second in-memory cache for validated tokens/keys (reduces latency)
+- Automatic cache cleanup every 60 seconds
+
+**Scalability**
+- Auth service can be horizontally scaled independently (stateless except Postgres)
+- Rate limiter is per-instance (scales with replicas)
+- Cache is per-instance (no shared state needed)
+
+#### Files Changed (Auth Service Split)
+
+```
+apps/auth/                             — NEW: standalone auth microservice
+apps/auth/package.json                 — Service dependencies (hono, postgres, nanoid)
+apps/auth/tsconfig.json                — TypeScript config
+apps/auth/Dockerfile                   — Multi-stage Docker build
+apps/auth/src/index.ts                 — Hono entry point on :4401
+apps/auth/src/routes.ts                — Register, login, /me, /validate, /validate-key
+apps/auth/src/db.ts                    — Postgres client + auth schema init
+apps/api/src/middleware/auth.ts        — REWRITTEN: calls auth service instead of direct DB
+apps/api/src/index.ts                  — Removed authRoutes import, added /auth/* proxy to auth service
+docker-compose.yml                     — Added auth service container, API depends_on auth
+.env.example                           — Added AUTH_PORT, INTERNAL_AUTH_KEY
+```

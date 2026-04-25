@@ -1,20 +1,58 @@
 import type { Context, Next } from 'hono';
-import { verify } from 'hono/jwt';
 import { API_KEY_HEADER } from '@panopticon/shared';
-import { getPostgres } from '../db/postgres.js';
-import { JWT_SECRET } from '../routes/auth.js';
 
 /**
  * Dual-mode authentication middleware.
  *
+ * Delegates all credential validation to the standalone Auth service
+ * via internal HTTP calls, keeping the API stateless w.r.t. auth.
+ *
  * Mode 1 — API key (SDK / programmatic):
- *   Header: x-api-key → validates against projects table, sets `projectId`.
+ *   Header: x-api-key → POST auth-service/auth/validate-key
  *
  * Mode 2 — JWT Bearer (dashboard):
- *   Header: Authorization: Bearer <jwt> → validates token, resolves user,
- *   sets `userId`. If a project_id is present (query or route param),
- *   also resolves `role` from project_members.
+ *   Header: Authorization: Bearer <jwt> → POST auth-service/auth/validate
  */
+
+const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://localhost:4401';
+const INTERNAL_AUTH_KEY = process.env.INTERNAL_AUTH_KEY || 'panopticon-internal-key';
+
+// ── Short-lived cache to reduce latency on repeated requests ──────────────
+interface CacheEntry<T> { data: T; expiresAt: number }
+const keyCache = new Map<string, CacheEntry<{ projectId: string }>>();
+const tokenCache = new Map<string, CacheEntry<{ userId: string; projectId?: string; role?: string }>>();
+const CACHE_TTL_MS = 30_000; // 30 seconds
+
+function getCached<T>(cache: Map<string, CacheEntry<T>>, key: string): T | null {
+  const entry = cache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) { cache.delete(key); return null; }
+  return entry.data;
+}
+
+function setCache<T>(cache: Map<string, CacheEntry<T>>, key: string, data: T): void {
+  cache.set(key, { data, expiresAt: Date.now() + CACHE_TTL_MS });
+}
+
+// Cleanup stale cache entries every 60s
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of keyCache) if (now > v.expiresAt) keyCache.delete(k);
+  for (const [k, v] of tokenCache) if (now > v.expiresAt) tokenCache.delete(k);
+}, 60_000);
+
+async function callAuthService(path: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const res = await fetch(`${AUTH_SERVICE_URL}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-internal-key': INTERNAL_AUTH_KEY,
+    },
+    body: JSON.stringify(body),
+  });
+  return res.json() as Promise<Record<string, unknown>>;
+}
+
 export async function authMiddleware(c: Context, next: Next) {
   const apiKey = c.req.header(API_KEY_HEADER);
   const authHeader = c.req.header('Authorization');
@@ -22,14 +60,24 @@ export async function authMiddleware(c: Context, next: Next) {
   // ── Mode 1: API key ──────────────────────────────────────────────────────
   if (apiKey) {
     try {
-      const sql = getPostgres();
-      const [project] = await sql`SELECT id FROM projects WHERE api_key = ${apiKey}`;
+      // Check cache first
+      const cached = getCached(keyCache, apiKey);
+      if (cached) {
+        c.set('projectId', cached.projectId);
+        c.set('authMode', 'apikey');
+        return next();
+      }
 
-      if (!project) {
+      const result = await callAuthService('/auth/validate-key', { api_key: apiKey });
+
+      if (!result.valid) {
         return c.json({ error: 'unauthorized', message: 'Invalid API key', statusCode: 401 }, 401);
       }
 
-      c.set('projectId', project.id);
+      const projectId = result.projectId as string;
+      setCache(keyCache, apiKey, { projectId });
+
+      c.set('projectId', projectId);
       c.set('authMode', 'apikey');
       return next();
     } catch (err) {
@@ -43,33 +91,41 @@ export async function authMiddleware(c: Context, next: Next) {
     const token = authHeader.slice(7);
 
     try {
-      const payload = await verify(token, JWT_SECRET);
-      const userId = payload.sub as string;
+      const projectId = c.req.query('project_id') || c.req.param('id') || c.req.param('projectId');
+      const cacheKey = projectId ? `${token}:${projectId}` : token;
 
-      if (!userId) {
-        return c.json({ error: 'unauthorized', message: 'Invalid token payload', statusCode: 401 }, 401);
+      // Check cache first
+      const cached = getCached(tokenCache, cacheKey);
+      if (cached) {
+        c.set('userId', cached.userId);
+        c.set('authMode', 'jwt');
+        if (cached.projectId) {
+          c.set('projectId', cached.projectId);
+          c.set('role', cached.role ?? null);
+        }
+        return next();
       }
 
-      const sql = getPostgres();
+      const body: Record<string, unknown> = { token };
+      if (projectId) body.project_id = projectId;
 
-      // Verify user still exists
-      const [user] = await sql`SELECT id FROM users WHERE id = ${userId}`;
-      if (!user) {
-        return c.json({ error: 'unauthorized', message: 'User not found', statusCode: 401 }, 401);
+      const result = await callAuthService('/auth/validate', body);
+
+      if (!result.valid) {
+        return c.json({ error: 'unauthorized', message: (result.error as string) || 'Invalid or expired token', statusCode: 401 }, 401);
       }
+
+      const userId = result.userId as string;
+      const role = result.role as string | undefined;
+
+      setCache(tokenCache, cacheKey, { userId, projectId, role });
 
       c.set('userId', userId);
       c.set('authMode', 'jwt');
 
-      // If a project_id is referenced, resolve the user's role
-      const projectId = c.req.query('project_id') || c.req.param('id') || c.req.param('projectId');
       if (projectId) {
-        const [membership] = await sql`
-          SELECT role FROM project_members
-          WHERE project_id = ${projectId} AND user_id = ${userId}
-        `;
         c.set('projectId', projectId);
-        c.set('role', membership?.role ?? null);
+        c.set('role', role ?? null);
       }
 
       return next();

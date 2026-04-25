@@ -64,6 +64,29 @@ services:
   # ---------------------------------------------------------------------------
   # Application
   # ---------------------------------------------------------------------------
+  auth:
+    build:
+      context: .
+      dockerfile: apps/auth/Dockerfile
+    container_name: panopticon-auth
+    ports:
+      - "${AUTH_PORT:-4401}:4401"
+    environment:
+      PORT: "4401"
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-panopticon}:${POSTGRES_PASSWORD:-panopticon}@postgres:5432/${POSTGRES_DB:-panopticon}"
+      JWT_SECRET: "${JWT_SECRET:-panopticon-dev-secret-change-in-production}"
+      INTERNAL_AUTH_KEY: "${INTERNAL_AUTH_KEY:-panopticon-internal-key}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://localhost:4401/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - panopticon
+
   api:
     build:
       context: .
@@ -79,17 +102,20 @@ services:
       CLICKHOUSE_URL: "http://clickhouse:8123"
       CLICKHOUSE_DB: "${CLICKHOUSE_DB:-panopticon}"
       REDIS_URL: "redis://redis:6379"
+      AUTH_SERVICE_URL: "http://auth:4401"
+      INTERNAL_AUTH_KEY: "${INTERNAL_AUTH_KEY:-panopticon-internal-key}"
       LLM_PROVIDER: "${LLM_PROVIDER:-}"
       LLM_API_KEY: "${LLM_API_KEY:-}"
       LLM_MODEL: "${LLM_MODEL:-}"
       LLM_BASE_URL: "${LLM_BASE_URL:-}"
-      JWT_SECRET: "${JWT_SECRET:-panopticon-dev-secret-change-in-production}"
     depends_on:
       postgres:
         condition: service_healthy
       clickhouse:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      auth:
         condition: service_healthy
     networks:
       - panopticon
