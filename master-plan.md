@@ -71,49 +71,243 @@ make clean        # Remove volumes and images
 
 ## Architecture (Container-First)
 
-All services run as Docker containers. Development uses volume mounts for hot-reload.
-The only prerequisite is **Docker** (with Compose v2).
+All services run as Docker containers. The only prerequisite is **Docker** (with Compose v2).
+Development uses volume mounts for hot-reload — no local Bun/Node/npm required.
 
+---
+
+### 1 — System Context
+
+Who talks to what at the boundary level.
+
+```mermaid
+graph TB
+    subgraph Agents["AI Agents / MCP Servers"]
+        TS["TypeScript Agent\n@panopticon/sdk"]
+        PY["Python Agent\npanopticon-py"]
+        MCP["MCP Server\nauto-instrumented"]
+    end
+
+    subgraph Users["Human Users"]
+        DEV["Developer\nbrowser"]
+        OPS["Operator\nbrowser"]
+    end
+
+    subgraph PAN["Panopticon Platform"]
+        DASH["Dashboard\n:3000"]
+        API["API Gateway\n:4400"]
+        AUTH["Auth Service\n:4401"]
+    end
+
+    subgraph Notify["Outbound Alerts"]
+        WH["Webhook"]
+        SL["Slack"]
+    end
+
+    TS -->|"HTTP POST /v1/traces\nx-api-key"| API
+    PY -->|"HTTP POST /v1/traces\nx-api-key"| API
+    MCP -->|"HTTP POST /v1/traces\nx-api-key"| API
+    DEV -->|"HTTPS"| DASH
+    OPS -->|"HTTPS"| DASH
+    DASH -->|"REST + SSE\nBearer JWT"| API
+    API -->|"internal HTTP\nx-internal-key"| AUTH
+    API -->|"webhook dispatch"| WH
+    API -->|"Slack API"| SL
 ```
-┌── docker compose ──────────────────────────────────────┐
-│                                                        │
-│  ┌──────────┐  ┌──────────┐  ┌───────────────────┐    │
-│  │ api      │  │ dashboard│  │  postgres          │    │
-│  │ Hono/Bun │  │ Next.js  │  │  (config, auth)    │    │
-│  │ :4400    │  │ :3000    │  │  :5432             │    │
-│  └──────────┘  └──────────┘  └───────────────────┘    │
-│                                                        │
-│  ┌──────────┐  ┌──────────┐  ┌───────────────────┐    │
-│  │ worker   │  │ redis    │  │  clickhouse        │    │
-│  │ BullMQ   │  │ :6379    │  │  (traces/spans)    │    │
-│  └──────────┘  └──────────┘  │  :8123             │    │
-│                               └───────────────────┘    │
-└────────────────────────────────────────────────────────┘
 
-  External:  @panopticon/sdk  ──POST /v1/traces──▶  api
+---
+
+### 2 — Container Architecture
+
+Seven Docker containers inside a single Compose network.
+
+```mermaid
+graph TB
+    subgraph ext["External Traffic"]
+        SDK(["SDK / Agent\nPOST /v1/traces"])
+        BR(["Browser\nDashboard UI"])
+    end
+
+    subgraph compose["docker compose network: panopticon"]
+        direction LR
+
+        subgraph svc["Application Layer"]
+            AUTH["🔐 auth\nHono · Bun\n:4401\n─────────────\nregister · login\nJWT sign/verify\nAPI key validate"]
+            API["⚡ api\nHono · Bun\n:4400\n─────────────\ntrace ingestion\nproject CRUD\nAsk AI (LLM)\n/auth/* proxy"]
+            DASH["🖥 dashboard\nNext.js · React\n:3000\n─────────────\ntraces · live\ntopology · security\nalerts · sessions"]
+            WORKER["⚙️ worker\nBullMQ · Bun\n─────────────\nenrichment\nsecurity classify\nalert eval loop"]
+        end
+
+        subgraph store["Storage Layer"]
+            PG[("🐘 postgres\n:5432\n─────────────\nusers · projects\nmembers · api_keys\nalert_rules\nmcp_servers")]
+            CH[("🏛 clickhouse\n:8123\n─────────────\npanopticon.spans\npanopticon.audit_log\ntrace_analysis")]
+            RD[("🟥 redis\n:6379\n─────────────\nBullMQ queues\nRedis Streams\nSSE fan-out")]
+        end
+    end
+
+    SDK -->|"x-api-key"| API
+    BR --> DASH
+    DASH -->|"Bearer JWT"| API
+    API <-->|"internal RPC"| AUTH
+    AUTH --- PG
+    API --- PG
+    API --- CH
+    API -->|"XADD"| RD
+    API -->|"enqueue"| RD
+    RD -->|"dequeue"| WORKER
+    WORKER --- CH
+    WORKER --- PG
+    RD -->|"XREAD BLOCK"| API
 ```
 
-### Docker Containers (6 services)
+---
+
+### 3 — Span Ingestion & Processing Pipeline
+
+The journey of a single span batch from the SDK to storage and analysis.
+
+```mermaid
+flowchart TD
+    SDK["SDK\nPOST /v1/traces\nbatch of spans"]
+
+    SDK --> AUTH_MW
+
+    subgraph API["API Service (:4400)"]
+        AUTH_MW["authMiddleware\nAPI key → auth service\ncache 30s"]
+        VALID["Zod validation\nspan schema check\nproject ownership"]
+        WRITE["ClickHouse INSERT\npanopticon.spans"]
+        STREAM["Redis XADD\npanopticon:spans:{projectId}"]
+        ENQUEUE["BullMQ enqueue\nenrichment-job\nsecurity-job"]
+
+        AUTH_MW --> VALID
+        VALID --> WRITE
+        VALID --> STREAM
+        VALID --> ENQUEUE
+    end
+
+    subgraph WORKER["Worker Service (BullMQ)"]
+        ENR["enrichment-worker\nparse MCP method names\nextract model/cost metadata\nresolve parent spans"]
+        SEC["security-worker\nregex: prompt injection × 8\nregex: PII × 4\noptional LLM classify"]
+        ALERT["alert-worker\n60s eval loop\ncondition DSL eval\ncooldown check"]
+
+        ENQUEUE --> ENR
+        ENQUEUE --> SEC
+        ENQUEUE --> ALERT
+    end
+
+    ENR -->|"UPDATE metadata"| CH[("ClickHouse\npanopticon.spans")]
+    SEC -->|"UPDATE security_flags"| CH
+    ALERT -->|"UPDATE last_fired_at"| PG[("Postgres\nalert_rules")]
+    ALERT -->|"dispatch"| NOTIFY["Webhook / Slack"]
+
+    subgraph LIVE["Live Dashboard"]
+        SSE["SSE endpoint\nGET /v1/live/stream\nXREAD BLOCK 2000ms"]
+        UI["Dashboard\nReal-time charts\nlatency · errors · cost"]
+
+        STREAM --> SSE
+        SSE --> UI
+    end
+```
+
+---
+
+### 4 — Auth Service Flow
+
+Auth is a standalone service. The API proxies public `/auth/*` requests and calls internal validation endpoints for every authenticated route.
+
+```mermaid
+sequenceDiagram
+    participant SDK as SDK / Agent
+    participant DASH as Dashboard
+    participant API as API :4400
+    participant AUTH as Auth :4401
+    participant PG as Postgres
+
+    rect rgb(30, 40, 60)
+        Note over SDK,API: Mode 1 — API key (programmatic ingestion)
+        SDK->>API: POST /v1/traces<br/>x-api-key: pan_live_xxx
+        API->>API: hit 30s in-memory cache?
+        API->>AUTH: POST /auth/validate-key<br/>x-internal-key: ●●●
+        AUTH->>PG: SELECT id FROM projects<br/>WHERE api_key = $1
+        PG-->>AUTH: { id: "proj_abc" }
+        AUTH-->>API: { valid: true, projectId: "proj_abc" }
+        API->>API: store in cache (30s TTL)
+        API-->>SDK: 201 Created
+    end
+
+    rect rgb(30, 50, 40)
+        Note over DASH,PG: Mode 2 — JWT Bearer (dashboard user)
+        DASH->>API: POST /auth/login<br/>{ email, password }
+        API->>AUTH: proxy → POST /auth/login
+        AUTH->>PG: SELECT id, password_hash FROM users
+        PG-->>AUTH: { id: "usr_xyz", hash: "$2b$12$…" }
+        AUTH->>AUTH: bcrypt.verify(password, hash)
+        AUTH-->>API: { token: "eyJ…", user: {…} }
+        API-->>DASH: 200 OK — JWT stored in localStorage
+
+        DASH->>API: GET /v1/traces?project_id=proj_abc<br/>Authorization: Bearer eyJ…
+        API->>AUTH: POST /auth/validate<br/>{ token, project_id: "proj_abc" }
+        AUTH->>AUTH: jwt.verify(token, JWT_SECRET)
+        AUTH->>PG: SELECT role FROM project_members<br/>WHERE project_id=$1 AND user_id=$2
+        PG-->>AUTH: { role: "admin" }
+        AUTH-->>API: { valid: true, userId: "usr_xyz", role: "admin" }
+        API-->>DASH: 200 OK — trace data
+    end
+```
+
+---
+
+### 5 — Monorepo Package Graph
+
+Turborepo workspace — build order flows left to right.
+
+```mermaid
+graph LR
+    subgraph packages["packages/ (shared libraries)"]
+        SHARED["@panopticon/shared\ntypes · constants\nAPI_KEY_HEADER\nDEFAULT_API_PORT"]
+        SDK_PKG["@panopticon/sdk\nTypeScript SDK\nstartTrace · startSpan\ninstrumentMCP"]
+    end
+
+    subgraph apps["apps/ (runnable services)"]
+        AUTH_APP["auth\nHono · Bun\n:4401"]
+        API_APP["api\nHono · Bun\n:4400"]
+        WORKER_APP["worker\nBullMQ · Bun"]
+        DASH_APP["dashboard\nNext.js\n:3000"]
+    end
+
+    SHARED --> AUTH_APP
+    SHARED --> API_APP
+    SHARED --> WORKER_APP
+    SHARED --> DASH_APP
+    SHARED --> SDK_PKG
+    SDK_PKG -.->|"instruments"| API_APP
+```
+
+---
+
+### Service Reference
 
 | Container | Image | Port | Role |
 |-----------|-------|------|------|
-| **api** | `oven/bun` + app code | 4400 | Hono API — ingestion, auth, project CRUD |
-| **dashboard** | `node` + Next.js | 3000 | Web UI — traces, live, topology, security |
-| **worker** | `oven/bun` + app code | — | BullMQ jobs — enrichment, classification, alerts |
-| **postgres** | `postgres:16-alpine` | 5432 | Config DB — projects, MCP registry, alert rules |
-| **clickhouse** | `clickhouse/clickhouse-server:24` | 8123 | Trace storage — spans, high-cardinality queries |
-| **redis** | `redis:7-alpine` | 6379 | Real-time pub/sub + job queue |
+| **auth** | `oven/bun:1.1` | 4401 | JWT signing, API-key validation, user CRUD |
+| **api** | `oven/bun:1.1` | 4400 | Ingestion, project CRUD, Ask AI, `/auth/*` proxy |
+| **dashboard** | `node:20-alpine` + Next.js | 3000 | Web UI — all observability views |
+| **worker** | `oven/bun:1.1` | — | Enrichment, security classification, alert eval |
+| **postgres** | `postgres:16-alpine` | 5432 | Users, projects, members, alert rules, MCP registry |
+| **clickhouse** | `clickhouse/clickhouse-server:24` | 8123 | Spans, audit log, trace analysis |
+| **redis** | `redis:7-alpine` | 6379 | BullMQ queues, Redis Streams, SSE pub/sub |
 
 ### Tech Stack
 
 | Layer | Technology | Rationale |
 |-------|-----------|-----------|
+| **Auth Service** | Hono (on Bun) | Isolated JWT/bcrypt service, independently scalable |
 | **Backend API** | Hono (on Bun) | Lightweight, fast, TypeScript-native |
 | **Dashboard** | Next.js 15 + React 19 | SSR, app router, RSC for data-heavy views |
 | **UI Components** | shadcn/ui + Tailwind | Clean, accessible, themeable |
 | **Trace Storage** | ClickHouse | Columnar DB, excellent for high-cardinality trace queries |
 | **Config/Auth DB** | PostgreSQL | Relational data: projects, users, alert rules |
-| **Real-time** | Redis Streams | Pub/sub for live dashboards + WebSocket fan-out |
+| **Real-time** | Redis Streams | Pub/sub for live dashboards + SSE fan-out |
 | **Queue** | BullMQ (Redis) | Background jobs: enrichment, classification, alerting |
 | **Visualizations** | Recharts + D3 (topology) | Trace waterfalls, time-series charts, force-directed graphs |
 | **SDK (TypeScript)** | `@panopticon/sdk` | Instrument agents/MCP with minimal code |
@@ -636,19 +830,33 @@ Panopticon has always **observed** LLM-powered agents — now it **uses** LLM in
 
 ### Architecture
 
-```
-                         ┌─────────────────────┐
-                         │  LLM Provider        │
-                         │  OpenAI / Anthropic   │
-                         │  / Ollama (local)     │
-                         └──────▲──▲──▲─────────┘
-                                │  │  │
-              ┌─────────────────┘  │  └──────────────────┐
-              │                    │                      │
-   ┌──────────┴───────┐  ┌───────┴────────┐  ┌──────────┴──────────┐
-   │ security-classify │  │ trace-analysis │  │ nl-query (API)      │
-   │ (worker, async)   │  │ (on-demand)    │  │ (sync, JSON)        │
-   └──────────────────┘  └────────────────┘  └─────────────────────┘
+```mermaid
+graph TB
+    subgraph Providers["LLM Providers (configured via env)"]
+        OAI["OpenAI\ngpt-4o-mini · gpt-4o\nLLM_PROVIDER=openai"]
+        ANT["Anthropic\nclaude-3-5-haiku\nLLM_PROVIDER=anthropic"]
+        OLL["Ollama (local)\nllama3.2 · mistral\nLLM_PROVIDER=ollama\nno API key needed"]
+    end
+
+    PROV["apps/api/src/llm/provider.ts\nProvider abstraction\nOpenAI-compatible interface\ngraceful fallback if no LLM"]
+
+    OAI --> PROV
+    ANT --> PROV
+    OLL --> PROV
+
+    subgraph Consumers["LLM Consumers"]
+        SEC["security-classify\nllm/security.ts\nworker · async\nregex-first → LLM-second\n5 threat categories\nseverity + reasoning"]
+        ANA["trace-analysis\nllm/analysis.ts\nPOST /v1/ai/traces/:id/analyze\non-demand · cached\nsummary · rootCause\nimpact · recommendation"]
+        NLQ["nl-query\nllm/query.ts\nPOST /v1/ai/query\nsync · JSON response\nNL → SQL → execute\n3-layer guardrails"]
+    end
+
+    PROV --> SEC
+    PROV --> ANA
+    PROV --> NLQ
+
+    SEC -->|"UPDATE security_flags\nmetadata.severity"| CH[("ClickHouse\npanopticon.spans")]
+    ANA -->|"INSERT analysis"| CH2[("ClickHouse\ntrace_analysis")]
+    NLQ -->|"SELECT query"| CH3[("ClickHouse\npanopticon.spans\naudit_log")]
 ```
 
 **Provider abstraction** (`apps/api/src/llm/provider.ts`):
